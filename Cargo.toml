@@ -1,0 +1,10 @@
+[package]
+name = "bismite"
+version = "0.1.0"
+authors = ["rep-nop <repnop@outlook.com>"]
+
+[dependencies]
+codespan = "0.1.1"
+codespan-reporting = "0.1.3"
+structopt = "0.2.7"
+structopt-derive = "0.2.7"

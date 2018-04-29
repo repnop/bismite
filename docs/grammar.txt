@@ -1,0 +1,13 @@
+<Begin> -> <Decl>*
+<Decl> -> <StructDecl> | <FnDecl>
+<StructDecl> -> struct <Ident> `{` <FieldDecl>* `}`
+
+// TODO: Allow optional trailing commas
+<FieldDecl> -> { <Ident> `:` <Ident> `,` }*
+
+<FnDecl> -> fn <Ident> `(` <FieldDecl> `)` { `->` <Ident> } 
+            `{` 
+                <Stmt>*
+            `}`
+
+<Ident> -> [_a-zA-Z][_a-zA-Z0-9]*
