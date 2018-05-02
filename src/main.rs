@@ -35,9 +35,6 @@ struct Options {
 fn main() {
     let t = token::TokenKind::Ident(String::from("asdf"));
     let t2 = token::TokenKind::Ident(String::from("asdf2"));
-
-    println!("{:?}\n\n\n\n\n", t == t2);
-
     let options = Options::from_args();
 
     let file_contents = match std::fs::read_to_string(&options.input) {
@@ -59,5 +56,17 @@ fn main() {
 
     let writer = StandardStream::stdout(ColorArg::from_str("auto").unwrap().into());
 
-    println!("{:?}", parser::Parser(ts).begin_parse());
+    if let Err(e) = parser::Parser(ts).begin_parse() {
+        emit(
+            writer.lock(),
+            &cm,
+            &Diagnostic::new(Severity::Error, format!("{}", e)).with_label(Label::new_primary(
+                match e {
+                    parser::ParserError::InvalidToken(e) => e.span(),
+                    parser::ParserError::UnexpectedToken(t, _) => t.span,
+                    _ => panic!("{:?}", e),
+                },
+            )),
+        ).unwrap();
+    }
 }

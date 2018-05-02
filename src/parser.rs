@@ -25,7 +25,12 @@ impl<'a> Parser<'a> {
                         self.declaration()?
                     }
                     // Return an error because it isn't valid code.
-                    _ => return Err(ParserError::ParseError),
+                    _ => {
+                        return Err(ParserError::UnexpectedToken(
+                            tkn,
+                            TokenKind::Keyword(Keyword::Fn),
+                        ))
+                    }
                 };
             } else {
                 // No declarations is valid, or we've finished all of them and hit eof.
@@ -33,7 +38,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        println!("<Begin>");
+        //println!("<Begin>");
         Ok(Ast::Placeholder("<Begin>"))
     }
 
@@ -48,26 +53,50 @@ impl<'a> Parser<'a> {
             match tkn.kind {
                 // Parse a struct declaration.
                 TokenKind::Keyword(Keyword::Struct) => {
-                    println!("<StructDecl>");
+                    //println!("<StructDecl>");
 
                     // Match `struct <Ident> '{' <FieldDecl>* '}'`
                     self.eat_match(TokenKind::Keyword(Keyword::Struct))?;
                     self.eat_match(TokenKind::Ident(String::new()))?;
                     self.eat_match(TokenKind::Symbol(Symbol::LBrace))?;
 
-                    if let Some(_) = self.peek_match(TokenKind::Ident(String::new())) {
-                        self.field_declaration()?;
-                    }
+                    match self.peek_match(TokenKind::Ident(String::new())) {
+                        Some(Token {
+                            kind: TokenKind::Ident(_),
+                            ..
+                        }) => {
+                            self.field_declaration()?;
+                        }
+                        Some(_) | None => match self.0.peek() {
+                            Some(Ok(Token {
+                                kind: TokenKind::Symbol(Symbol::RBrace),
+                                ..
+                            })) => {}
+                            Some(Ok(t)) => {
+                                return Err(ParserError::UnexpectedToken(
+                                    t.clone(),
+                                    TokenKind::Ident(String::new()),
+                                ));
+                            }
+                            Some(Err(ref e)) => return Err(e.clone().into()),
+                            _ => return Err(ParserError::UnexpectedEOF),
+                        },
+                    };
 
                     self.eat_match(TokenKind::Symbol(Symbol::RBrace))?;
                 }
                 // Parse a function declaration.
                 TokenKind::Keyword(Keyword::Fn) => {
-                    println!("<FnDecl>");
-                    self.eat_match(TokenKind::Keyword(Keyword::Struct))?;
+                    //println!("<FnDecl>");
+                    self.eat_match(TokenKind::Keyword(Keyword::Fn))?;
                 }
                 // Invalid declaration.
-                _ => return Err(ParserError::ParseError),
+                _ => {
+                    return Err(ParserError::UnexpectedToken(
+                        tkn,
+                        TokenKind::Keyword(Keyword::Fn),
+                    ))
+                }
             };
 
             Ok(Ast::Placeholder("<Decl>"))
@@ -88,7 +117,7 @@ impl<'a> Parser<'a> {
                 // Parse `<Ident>: <Ident> ','`
                 match tkn.kind {
                     TokenKind::Ident(_) => {
-                        println!("<Ident>");
+                        //println!("<Ident>");
                         self.eat_match(TokenKind::Ident(String::new()))?;
                         self.eat_match(TokenKind::Symbol(Symbol::Colon))?;
                         self.eat_match(TokenKind::Ident(String::new()))?;
@@ -96,7 +125,7 @@ impl<'a> Parser<'a> {
                     }
                     // Otherwise we're done parsing <FieldDecl>s
                     _ => {
-                        println!("<FieldDecl>");
+                        //println!("<FieldDecl>");
                         return Ok(Ast::Placeholder("<FieldDecl>"));
                     }
                 }
@@ -105,7 +134,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        println!("<FieldDecl>");
+        //println!("<FieldDecl>");
         Ok(Ast::Placeholder("<FieldDecl>"))
     }
 
@@ -115,28 +144,28 @@ impl<'a> Parser<'a> {
         // Match the next token (returning an error if we're eof).
         let token = match self.0.next() {
             Some(tkn) => tkn,
-            None => return Err(ParserError::ParseError),
+            None => return Err(ParserError::UnexpectedEOF),
         }?;
 
         // Compare to the expected `TokenKind`
         if token.kind == tk {
-            println!("Matched {:?}", token.kind);
+            //println!("Matched {:?}", token.kind);
             Ok(token.kind)
         } else {
-            Err(ParserError::ParseError)
+            Err(ParserError::UnexpectedToken(token, tk))
         }
     }
 
     /// Peeks at the next token, returning `None` if the token types are different.
-    fn peek_match(&mut self, tk: TokenKind) -> Option<()> {
+    fn peek_match(&mut self, tk: TokenKind) -> Option<Token> {
         // TODO: fix unwrap
         let token = match self.0.peek().unwrap() {
             Ok(tkn) => tkn,
-            Err(e) => return None,
+            Err(_) => return None,
         };
 
         if token.kind == tk {
-            Some(())
+            Some(token.clone())
         } else {
             None
         }
@@ -147,12 +176,35 @@ impl<'a> Parser<'a> {
 #[derive(Debug)]
 pub enum ParserError {
     /// Generic, placeholder error for now.
-    ParseError,
+    InvalidToken(TokenError),
+    /// Error for finding an unexpected token type.
+    // TODO: Add what it expected.
+    UnexpectedToken(Token, TokenKind),
+    /// Unexpectedly hit end of file.
+    UnexpectedEOF,
+}
+
+impl ::std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        use self::ParserError::*;
+
+        match self {
+            &InvalidToken(ref te) => write!(f, "{}", te),
+            // TODO: write actual display implementation for tokens.
+            &UnexpectedToken(ref t, ref k) => write!(
+                f,
+                "Unexpected token: found {}, expected {}",
+                t.kind.name(),
+                k.name()
+            ),
+            UnexpectedEOF => write!(f, "Unexpectedly hit end of file."),
+        }
+    }
 }
 
 impl From<TokenError> for ParserError {
-    fn from(_te: TokenError) -> ParserError {
-        ParserError::ParseError
+    fn from(te: TokenError) -> ParserError {
+        ParserError::InvalidToken(te)
     }
 }
 

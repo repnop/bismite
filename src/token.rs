@@ -14,7 +14,29 @@ pub enum TokenError {
     /// Invalid token and position in source.
     InvalidToken(String, ByteSpan),
     /// Invalid (integer) literal.
-    InvalidLiteral,
+    InvalidLiteral(ByteSpan),
+}
+
+impl TokenError {
+    pub fn span(&self) -> ByteSpan {
+        use self::TokenError::*;
+
+        match self {
+            &InvalidToken(ref t, ref span) => span.clone(),
+            &InvalidLiteral(ref span) => span.clone(),
+        }
+    }
+}
+
+impl ::std::fmt::Display for TokenError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        use self::TokenError::*;
+
+        match self {
+            &InvalidToken(ref t, _) => write!(f, "Invalid token `{}` found.", t),
+            &InvalidLiteral(_) => write!(f, "Invalid literal."),
+        }
+    }
 }
 
 /// The type of token.
@@ -34,12 +56,63 @@ pub enum TokenKind {
     Comparison(Comparison),
 }
 
+impl TokenKind {
+    pub fn name(&self) -> &'static str {
+        use self::Symbol;
+        use self::TokenKind::*;
+
+        match self {
+            IntLit(_) => "integer literal",
+            Ident(_) => "identifier",
+            Symbol(ref s) => match s {
+                &Symbol::LParen => "symbol `(`",
+                &Symbol::RParen => "symbol `)`",
+                &Symbol::LBrace => "symbol `{`",
+                &Symbol::RBrace => "symbol `}`",
+                &Symbol::LBracket => "symbol `[`",
+                &Symbol::RBracket => "symbol `]`",
+                &Symbol::Comma => "symbol `,`",
+                &Symbol::Period => "symbol `.`",
+                &Symbol::Semicolon => "symbol `;`",
+                &Symbol::Colon => "symbol `:`",
+                &Symbol::Arrow => "symbol `->`",
+            },
+            Keyword(_) => "keyword",
+            Operator(_) | Comparison(_) => "operator",
+        }
+    }
+}
+
 impl PartialEq for TokenKind {
     fn eq(&self, other: &TokenKind) -> bool {
-        let discm_self = ::std::mem::discriminant(self);
-        let discm_other = ::std::mem::discriminant(other);
+        use self::TokenKind::*;
 
-        discm_self == discm_other
+        match self {
+            &IntLit(n) => match other {
+                &IntLit(m) => n == m,
+                _ => false,
+            },
+            &Ident(_) => match other {
+                &Ident(_) => true,
+                _ => false,
+            },
+            &Symbol(ref n) => match other {
+                &Symbol(ref m) => n == m,
+                _ => false,
+            },
+            &Keyword(ref n) => match other {
+                &Keyword(ref m) => n == m,
+                _ => false,
+            },
+            &Operator(ref n) => match other {
+                &Operator(ref m) => n == m,
+                _ => false,
+            },
+            &Comparison(ref n) => match other {
+                &Comparison(ref m) => n == m,
+                _ => false,
+            },
+        }
     }
 
     fn ne(&self, other: &TokenKind) -> bool {

@@ -19,396 +19,409 @@ impl<'a> Iterator for TokenStream<'a> {
 
     /// Lexes and returns the next token.
     fn next(&mut self) -> Option<Result<Token, TokenError>> {
-        'mainlp: loop {
-            let &(mut pos_start, ch) = self.0.peek()?;
-            let mut pos_end = 0;
-
-            pos_start += 1;
-
-            if ch.is_whitespace() {
+        while let Some(&(_, c)) = self.0.peek() {
+            if c.is_whitespace() {
                 self.0.next().unwrap();
                 continue;
+            } else {
+                break;
+            }
+        }
+
+        let &(mut pos_start, ch) = self.0.peek()?;
+        let mut pos_end = 0;
+
+        pos_start += 1;
+
+        return Some(match ch {
+            // Parse numbers.
+            '0'...'9' => match eat_number(&mut self.0) {
+                Ok((idx, n)) => Ok(Token {
+                    kind: TokenKind::IntLit(n),
+                    span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(idx + 1)),
+                }),
+                Err(n) => Err(TokenError::InvalidLiteral(ByteSpan::new(
+                    ByteIndex(pos_start as u32),
+                    ByteIndex(if let Some(&(idx, _)) = self.0.peek() {
+                        idx as u32
+                    } else {
+                        n
+                    }),
+                ))),
+            },
+
+            // Parse identifiers.
+            '_' | 'a'...'z' | 'A'...'Z' => {
+                let mut ident = String::new();
+
+                'id: while let Some(&(idx, ch)) = self.0.peek() {
+                    if !ch.is_alphanumeric() && ch != '_' {
+                        pos_end = idx as u32;
+                        break 'id;
+                    }
+
+                    ident.push(self.0.next().unwrap().1);
+                }
+
+                if pos_end == 0 {
+                    pos_end = pos_start as u32 + 1;
+                }
+
+                Ok(Token {
+                    kind: check_reserved(ident),
+                    span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(pos_end + 1)),
+                })
             }
 
-            return Some(match ch {
-                // Parse numbers.
-                '0'...'9' => match eat_number(&mut self.0) {
-                    Some((idx, n)) => Ok(Token {
-                        kind: TokenKind::IntLit(n),
-                        span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(idx + 1)),
+            // Parse individual operators or symbols.
+            '>' => {
+                self.0.next().unwrap();
+
+                match self.0.peek() {
+                    Some(&(_, '>')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
+
+                        Ok(Token {
+                            kind: TokenKind::Operator(Operator::RShift),
+                            span: ByteSpan::new(
+                                ByteIndex(pos_start as u32),
+                                ByteIndex(idx as u32 + 1),
+                            ),
+                        })
+                    }
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
+
+                        Ok(Token {
+                            kind: TokenKind::Comparison(Comparison::GtEq),
+                            span: ByteSpan::new(
+                                ByteIndex(pos_start as u32),
+                                ByteIndex(idx as u32 + 1),
+                            ),
+                        })
+                    }
+                    _ => Ok(Token {
+                        kind: TokenKind::Comparison(Comparison::Gt),
+                        span: ByteSpan::new(
+                            ByteIndex(pos_start as u32),
+                            ByteIndex(pos_start as u32 + 1),
+                        ),
                     }),
-                    None => Err(TokenError::InvalidLiteral),
-                },
-
-                // Parse identifiers.
-                '_' | 'a'...'z' | 'A'...'Z' => {
-                    let mut ident = String::new();
-
-                    'id: while let Some(&(idx, ch)) = self.0.peek() {
-                        if !ch.is_alphanumeric() && ch != '_' {
-                            pos_end = idx as u32;
-                            break 'id;
-                        }
-
-                        ident.push(self.0.next().unwrap().1);
-                    }
-
-                    Ok(Token {
-                        kind: check_reserved(ident),
-                        span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(pos_end + 1)),
-                    })
                 }
+            }
+            '<' => {
+                self.0.next().unwrap();
 
-                // Parse individual operators or symbols.
-                '>' => {
-                    self.0.next().unwrap();
+                match self.0.peek() {
+                    Some(&(_, '<')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                    match self.0.peek() {
-                        Some(&(_, '>')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
-
-                            Ok(Token {
-                                kind: TokenKind::Operator(Operator::RShift),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
-
-                            Ok(Token {
-                                kind: TokenKind::Comparison(Comparison::GtEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Comparison(Comparison::Gt),
+                        Ok(Token {
+                            kind: TokenKind::Operator(Operator::LShift),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
-                }
-                '<' => {
-                    self.0.next().unwrap();
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                    match self.0.peek() {
-                        Some(&(_, '<')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
-
-                            Ok(Token {
-                                kind: TokenKind::Operator(Operator::LShift),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
-
-                            Ok(Token {
-                                kind: TokenKind::Comparison(Comparison::LtEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Comparison(Comparison::Lt),
+                        Ok(Token {
+                            kind: TokenKind::Comparison(Comparison::LtEq),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
+                    _ => Ok(Token {
+                        kind: TokenKind::Comparison(Comparison::Lt),
+                        span: ByteSpan::new(
+                            ByteIndex(pos_start as u32),
+                            ByteIndex(pos_start as u32 + 1),
+                        ),
+                    }),
                 }
-                '!' => {
-                    self.0.next().unwrap();
+            }
+            '!' => {
+                self.0.next().unwrap();
 
-                    match self.0.peek() {
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
+                match self.0.peek() {
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                            Ok(Token {
-                                kind: TokenKind::Comparison(Comparison::NotEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Operator(Operator::Not),
+                        Ok(Token {
+                            kind: TokenKind::Comparison(Comparison::NotEq),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
-                }
-                '.' => {
-                    self.0.next().unwrap();
-
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::Period),
+                    _ => Ok(Token {
+                        kind: TokenKind::Operator(Operator::Not),
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
                         ),
-                    })
+                    }),
                 }
-                '-' => {
-                    self.0.next().unwrap();
+            }
+            '.' => {
+                self.0.next().unwrap();
 
-                    match self.0.peek() {
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::Period),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            '-' => {
+                self.0.next().unwrap();
 
-                            Ok(Token {
-                                kind: TokenKind::Operator(Operator::MinusEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        Some(&(_, '>')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
+                match self.0.peek() {
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                            Ok(Token {
-                                kind: TokenKind::Symbol(Symbol::Arrow),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Operator(Operator::Minus),
+                        Ok(Token {
+                            kind: TokenKind::Operator(Operator::MinusEq),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
-                }
-                '+' => {
-                    self.0.next().unwrap();
+                    Some(&(_, '>')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                    match self.0.peek() {
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
-
-                            Ok(Token {
-                                kind: TokenKind::Operator(Operator::PlusEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Operator(Operator::Plus),
+                        Ok(Token {
+                            kind: TokenKind::Symbol(Symbol::Arrow),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
+                    _ => Ok(Token {
+                        kind: TokenKind::Operator(Operator::Minus),
+                        span: ByteSpan::new(
+                            ByteIndex(pos_start as u32),
+                            ByteIndex(pos_start as u32 + 1),
+                        ),
+                    }),
                 }
-                '*' => {
-                    self.0.next().unwrap();
+            }
+            '+' => {
+                self.0.next().unwrap();
 
-                    match self.0.peek() {
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
+                match self.0.peek() {
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                            Ok(Token {
-                                kind: TokenKind::Operator(Operator::MultEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Operator(Operator::Mult),
+                        Ok(Token {
+                            kind: TokenKind::Operator(Operator::PlusEq),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
+                    _ => Ok(Token {
+                        kind: TokenKind::Operator(Operator::Plus),
+                        span: ByteSpan::new(
+                            ByteIndex(pos_start as u32),
+                            ByteIndex(pos_start as u32 + 1),
+                        ),
+                    }),
                 }
-                '/' => {
-                    self.0.next().unwrap();
+            }
+            '*' => {
+                self.0.next().unwrap();
 
-                    match self.0.peek() {
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
+                match self.0.peek() {
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                            Ok(Token {
-                                kind: TokenKind::Operator(Operator::DivEq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        Some(&(_, '/')) => {
-                            eat_comment(&mut self.0, Comment::Single).unwrap();
-                            // TODO: fix?
-                            self.next()?
-                        }
-                        Some(&(_, '*')) => {
-                            eat_comment(&mut self.0, Comment::Multi);
-                            // TODO: fix?
-                            self.next()?
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Operator(Operator::Div),
+                        Ok(Token {
+                            kind: TokenKind::Operator(Operator::MultEq),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
+                    _ => Ok(Token {
+                        kind: TokenKind::Operator(Operator::Mult),
+                        span: ByteSpan::new(
+                            ByteIndex(pos_start as u32),
+                            ByteIndex(pos_start as u32 + 1),
+                        ),
+                    }),
                 }
-                '=' => {
-                    self.0.next().unwrap();
+            }
+            '/' => {
+                self.0.next().unwrap();
 
-                    match self.0.peek() {
-                        Some(&(_, '=')) => {
-                            let idx = self.0.next().unwrap().0 + 1;
+                match self.0.peek() {
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
 
-                            Ok(Token {
-                                kind: TokenKind::Comparison(Comparison::Eq),
-                                span: ByteSpan::new(
-                                    ByteIndex(pos_start as u32),
-                                    ByteIndex(idx as u32 + 1),
-                                ),
-                            })
-                        }
-                        _ => Ok(Token {
-                            kind: TokenKind::Operator(Operator::Eq),
+                        Ok(Token {
+                            kind: TokenKind::Operator(Operator::DivEq),
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
-                                ByteIndex(pos_start as u32 + 1),
+                                ByteIndex(idx as u32 + 1),
                             ),
-                        }),
+                        })
                     }
-                }
-                '(' => {
-                    self.0.next().unwrap();
-
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::LParen),
+                    Some(&(_, '/')) => {
+                        eat_comment(&mut self.0, Comment::Single).unwrap();
+                        // TODO: fix?
+                        return self.next();
+                    }
+                    Some(&(_, '*')) => {
+                        eat_comment(&mut self.0, Comment::Multi);
+                        // TODO: fix?
+                        return self.next();
+                    }
+                    _ => Ok(Token {
+                        kind: TokenKind::Operator(Operator::Div),
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
                         ),
-                    })
+                    }),
                 }
-                ')' => {
-                    self.0.next().unwrap();
+            }
+            '=' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::RParen),
+                match self.0.peek() {
+                    Some(&(_, '=')) => {
+                        let idx = self.0.next().unwrap().0 + 1;
+
+                        Ok(Token {
+                            kind: TokenKind::Comparison(Comparison::Eq),
+                            span: ByteSpan::new(
+                                ByteIndex(pos_start as u32),
+                                ByteIndex(idx as u32 + 1),
+                            ),
+                        })
+                    }
+                    _ => Ok(Token {
+                        kind: TokenKind::Operator(Operator::Eq),
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
                         ),
-                    })
+                    }),
                 }
-                '{' => {
-                    self.0.next().unwrap();
+            }
+            '(' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::LBrace),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
-                '}' => {
-                    self.0.next().unwrap();
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::LParen),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            ')' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::RBrace),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
-                '[' => {
-                    self.0.next().unwrap();
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::RParen),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            '{' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::LBracket),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
-                ']' => {
-                    self.0.next().unwrap();
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::LBrace),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            '}' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::RBracket),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
-                ',' => {
-                    self.0.next().unwrap();
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::RBrace),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            '[' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::Comma),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
-                ';' => {
-                    self.0.next().unwrap();
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::LBracket),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            ']' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::Semicolon),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
-                ':' => {
-                    self.0.next().unwrap();
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::RBracket),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            ',' => {
+                self.0.next().unwrap();
 
-                    Ok(Token {
-                        kind: TokenKind::Symbol(Symbol::Colon),
-                        span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
-                            ByteIndex(pos_start as u32 + 1),
-                        ),
-                    })
-                }
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::Comma),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            ';' => {
+                self.0.next().unwrap();
 
-                _ => Err(eat_invalid(&mut self.0, pos_start as u32)),
-            });
-        }
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::Semicolon),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+            ':' => {
+                self.0.next().unwrap();
+
+                Ok(Token {
+                    kind: TokenKind::Symbol(Symbol::Colon),
+                    span: ByteSpan::new(
+                        ByteIndex(pos_start as u32),
+                        ByteIndex(pos_start as u32 + 1),
+                    ),
+                })
+            }
+
+            _ => Err(eat_invalid(&mut self.0, pos_start as u32)),
+        });
     }
 }
 
@@ -436,7 +449,7 @@ fn eat_invalid<'a>(iter: &mut Peekable<CharIndices<'a>>, start: u32) -> TokenErr
 
 /// Consume a integer literal. Returns the ending byte position within the source file, and
 /// the parsed number, or `None` which signifies an invalid number.
-fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Option<(u32, usize)> {
+fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Result<(u32, usize), u32> {
     let mut result: usize = 0;
     let mut base = 10;
     let mut end_index = 0;
@@ -447,30 +460,34 @@ fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Option<(u32, usize)> 
         match iter.peek() {
             Some(&(_, 'b')) => {
                 base = 2;
-                iter.next().unwrap();
-                // TODO: fix this hack
-                digit(iter.peek()?.1, base)?;
+                // TODO: Fix this even more ugly hack
+                let (idx, _) = iter.next().unwrap();
+                digit(iter.peek().ok_or(idx as u32)?.1, base).ok_or(idx as u32)?;
             }
             Some(&(_, 'o')) => {
                 base = 8;
-                iter.next().unwrap();
-                digit(iter.peek()?.1, base)?;
+                let (idx, _) = iter.next().unwrap();
+                digit(iter.peek().ok_or(idx as u32)?.1, base).ok_or(idx as u32)?;
             }
             Some(&(_, 'x')) => {
                 base = 16;
-                iter.next().unwrap();
-                digit(iter.peek()?.1, base)?;
+                let (idx, _) = iter.next().unwrap();
+                digit(iter.peek().ok_or(idx as u32)?.1, base).ok_or(idx as u32)?;
             }
             Some(&(_, '0'...'9')) => {}
-            Some(&(idx, ' ')) | Some(&(idx, '\t')) => return Some((idx as u32, 0)),
+            Some(&(idx, ' ')) | Some(&(idx, '\t')) => return Ok((idx as u32, 0)),
             // TODO: Fix hack here.
-            Some(_) => return None,
-            None => return Some(((start + 1) as u32, 0)),
+            Some(_) => return Err(start as u32 + 1),
+            None => return Ok(((start + 1) as u32, 0)),
         };
     }
 
     loop {
-        result = result.checked_mul(base)?.checked_add(digit(ch, base)?)?;
+        result = result
+            .checked_mul(base)
+            .ok_or(end_index as u32)?
+            .checked_add(digit(ch, base).ok_or(end_index as u32)?)
+            .ok_or(end_index as u32)?;
 
         match iter.peek() {
             Some(&(_, '0'...'9')) | Some(&(_, 'A'...'F')) | Some(&(_, 'a'...'f')) => {
@@ -486,7 +503,7 @@ fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Option<(u32, usize)> 
         }
     }
 
-    Some((end_index as u32, result))
+    Ok((end_index as u32, result))
 }
 
 /// Validates digit and calculates value.
