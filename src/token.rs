@@ -43,7 +43,7 @@ impl ::std::fmt::Display for TokenError {
 #[derive(Debug, Clone)]
 pub enum TokenKind {
     /// Integer literals.
-    IntLit(usize),
+    IntLit(usize, bool),
     /// Identifiers.
     Ident(String),
     /// Symbols. (Misc symbols, e.g. `(`, `)`, `[`, `]`, etc)
@@ -62,7 +62,7 @@ impl TokenKind {
         use self::TokenKind::*;
 
         match self {
-            IntLit(_) => "integer literal",
+            IntLit(_, _) => "integer literal",
             Ident(_) => "identifier",
             Symbol(ref s) => match s {
                 &Symbol::LParen => "symbol `(`",
@@ -88,8 +88,8 @@ impl PartialEq for TokenKind {
         use self::TokenKind::*;
 
         match self {
-            &IntLit(n) => match other {
-                &IntLit(m) => n == m,
+            &IntLit(n, _) => match other {
+                &IntLit(m, _) => n == m,
                 _ => false,
             },
             &Ident(_) => match other {

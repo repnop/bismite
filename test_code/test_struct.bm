@@ -1,3 +1,14 @@
-struct Test { }
+struct Test {
+    myfield: type1,
+    myotherfield: type2,
+    badfield: type,
+}
 
-fn
+fn myfn(arg1: Test) -> returntype {
+    let myvar = 10;
+    let myvar2: type = 621;
+}
+
+fn myfn2() {
+
+}

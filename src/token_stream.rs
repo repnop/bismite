@@ -36,8 +36,8 @@ impl<'a> Iterator for TokenStream<'a> {
         return Some(match ch {
             // Parse numbers.
             '0'...'9' => match eat_number(&mut self.0) {
-                Ok((idx, n)) => Ok(Token {
-                    kind: TokenKind::IntLit(n),
+                Ok((idx, n, of)) => Ok(Token {
+                    kind: TokenKind::IntLit(n, of),
                     span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(idx + 1)),
                 }),
                 Err(n) => Err(TokenError::InvalidLiteral(ByteSpan::new(
@@ -428,7 +428,7 @@ impl<'a> Iterator for TokenStream<'a> {
 /// Consumes invalid tokens.
 fn eat_invalid<'a>(iter: &mut Peekable<CharIndices<'a>>, start: u32) -> TokenError {
     let mut invalid = String::new();
-    let mut end_idx = 0;
+    let mut end_idx = start as usize;
 
     while let Some(&(idx, ch)) = iter.peek() {
         if ch.is_whitespace() {
@@ -447,84 +447,204 @@ fn eat_invalid<'a>(iter: &mut Peekable<CharIndices<'a>>, start: u32) -> TokenErr
     )
 }
 
+const DIGIT_VALUES: [Option<(u8, usize)>; 128] = [
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some((0, 2)),
+    Some((1, 2)),
+    Some((2, 8)),
+    Some((3, 8)),
+    Some((4, 8)),
+    Some((5, 8)),
+    Some((6, 8)),
+    Some((7, 8)),
+    Some((8, 10)),
+    Some((9, 10)),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some((10, 16)),
+    Some((11, 16)),
+    Some((12, 16)),
+    Some((13, 16)),
+    Some((14, 16)),
+    Some((15, 16)),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some((10, 16)),
+    Some((11, 16)),
+    Some((12, 16)),
+    Some((13, 16)),
+    Some((14, 16)),
+    Some((15, 16)),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+];
+
 /// Consume a integer literal. Returns the ending byte position within the source file, and
 /// the parsed number, or `None` which signifies an invalid number.
-fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Result<(u32, usize), u32> {
-    let mut result: usize = 0;
-    let mut base = 10;
+fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Result<(u32, usize, bool), u32> {
+    let mut result = 0usize;
     let mut end_index = 0;
+    let mut overflow = false;
+    let start = iter.peek().unwrap().0 as u32;
 
-    let (start, mut ch) = iter.next().unwrap();
+    let radix = if let Some(&(_, '0')) = iter.peek() {
+        iter.next().unwrap();
+        get_radix(iter)
+    } else {
+        10usize
+    };
 
-    if ch == '0' {
-        match iter.peek() {
-            Some(&(_, 'b')) => {
-                base = 2;
-                // TODO: Fix this even more ugly hack
-                let (idx, _) = iter.next().unwrap();
-                digit(iter.peek().ok_or(idx as u32)?.1, base).ok_or(idx as u32)?;
-            }
-            Some(&(_, 'o')) => {
-                base = 8;
-                let (idx, _) = iter.next().unwrap();
-                digit(iter.peek().ok_or(idx as u32)?.1, base).ok_or(idx as u32)?;
-            }
-            Some(&(_, 'x')) => {
-                base = 16;
-                let (idx, _) = iter.next().unwrap();
-                digit(iter.peek().ok_or(idx as u32)?.1, base).ok_or(idx as u32)?;
-            }
-            Some(&(_, '0'...'9')) => {}
-            Some(&(idx, ' ')) | Some(&(idx, '\t')) => return Ok((idx as u32, 0)),
-            // TODO: Fix hack here.
-            Some(_) => return Err(start as u32 + 1),
-            None => return Ok(((start + 1) as u32, 0)),
-        };
-    }
+    while let Some(&(_, c)) = iter.peek() {
+        if c.is_whitespace() || !c.is_digit(radix as u32) {
+            break;
+        }
 
-    loop {
-        result = result
-            .checked_mul(base)
-            .ok_or(end_index as u32)?
-            .checked_add(digit(ch, base).ok_or(end_index as u32)?)
-            .ok_or(end_index as u32)?;
+        if let Some((val, rdx)) = DIGIT_VALUES[c as u8 as usize] {
+            iter.next().unwrap();
 
-        match iter.peek() {
-            Some(&(_, '0'...'9')) | Some(&(_, 'A'...'F')) | Some(&(_, 'a'...'f')) => {
-                let (ei, ch2) = iter.next().unwrap();
-                end_index = ei;
-                ch = ch2;
+            if rdx > radix {
+                return Err(eat_invalid(iter, start).span().end().0);
             }
-            Some(&p) => {
-                end_index = p.0;
-                break;
+
+            end_index += 1;
+
+            let (r, of) = result.overflowing_mul(radix as usize);
+            result = r;
+
+            if !overflow {
+                overflow = of;
             }
-            None => break,
+
+            let (r, of) = result.overflowing_add(val as usize);
+            result = r;
+
+            if !overflow {
+                overflow = of;
+            }
+        } else {
+            return Err(eat_invalid(iter, start).span().end().0);
         }
     }
 
-    Ok((end_index as u32, result))
+    // Free me from this lexing hell
+
+    Ok((end_index, result, overflow))
 }
 
-/// Validates digit and calculates value.
-fn digit(ch: char, base: usize) -> Option<usize> {
-    match ch {
-        '0'...'9' => if (ch as u8 - b'0') > (base - 1) as u8 {
-            None
-        } else {
-            Some((ch as u8 - b'0') as usize)
-        },
-        'A'...'F' => if base == 16 {
-            Some((ch as u8 - b'A') as usize + 10)
-        } else {
-            None
-        },
-        'a'...'f' => if base == 16 {
-            Some((ch as u8 - b'a') as usize + 10)
-        } else {
-            None
-        },
-        _ => None,
+fn get_radix<'a>(iter: &mut Peekable<CharIndices<'a>>) -> usize {
+    match iter.peek() {
+        Some(&(_, 'x')) => {
+            iter.next().unwrap();
+            16
+        }
+        Some(&(_, 'o')) => {
+            iter.next().unwrap();
+            8
+        }
+        Some(&(_, 'b')) => {
+            iter.next().unwrap();
+            2
+        }
+        _ => 10,
     }
 }
 
@@ -582,24 +702,29 @@ mod tests {
             ("0b11", 0b11),
             ("0o10", 0o10),
             ("18446744073709551615", 18446744073709551615),
+            ("18446744073709551616", 0),
         ];
 
-        let fails = ["18446744073709551616", "0b2", "0xJ", "0o8"];
+        let fails = ["0b2", "0xJ", "0o8", "0xFFasdf"];
 
         for num in &nums {
             let mut ts = TokenStream::new(num.0);
             let Token { kind: a, .. } = ts.next().expect("Some").expect("Ok");
 
             match a {
-                TokenKind::IntLit(n) => assert!(n == num.1, format!("{} != {}", n, num.1)),
+                TokenKind::IntLit(n, _) => assert!(n == num.1, format!("{} != {}", n, num.1)),
                 _ => unreachable!(),
             }
+
+            assert!(ts.next().is_none());
         }
 
         for fail in &fails {
             let mut ts = TokenStream::new(fail);
             let v = ts.next().expect("Some");
             assert!(v.is_err());
+
+            assert!(ts.next().is_none());
         }
     }
 
