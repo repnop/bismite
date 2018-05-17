@@ -4,6 +4,7 @@ extern crate structopt;
 #[macro_use]
 extern crate structopt_derive;
 
+mod ast;
 mod parser;
 mod token;
 mod token_stream;
@@ -33,8 +34,6 @@ struct Options {
 }
 
 fn main() {
-    let t = token::TokenKind::Ident(String::from("asdf"));
-    let t2 = token::TokenKind::Ident(String::from("asdf2"));
     let options = Options::from_args();
 
     let file_contents = match std::fs::read_to_string(&options.input) {
