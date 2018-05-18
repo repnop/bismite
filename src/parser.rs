@@ -25,18 +25,13 @@ impl<'a> Parser<'a> {
 
                 match tkn.kind {
                     // Structs and Fns are the only valid first set at the moment.
-                    TokenKind::Keyword(Keyword::Struct) => {
+                    TokenKind::Struct => {
                         // Parse the inner declarations.
                         decls.push_struct(self.struct_declaration()?)
                     }
-                    TokenKind::Keyword(Keyword::Fn) => decls.push_fn(self.fn_declaration()?),
+                    TokenKind::Fn => decls.push_fn(self.fn_declaration()?),
                     // Return an error because it isn't valid code.
-                    _ => {
-                        return Err(ParserError::UnexpectedToken(
-                            tkn,
-                            TokenKind::Keyword(Keyword::Fn),
-                        ))
-                    }
+                    _ => return Err(ParserError::UnexpectedToken(tkn, TokenKind::Fn)),
                 };
             } else {
                 // No declarations is valid, or we've finished all of them and hit eof.
@@ -50,11 +45,11 @@ impl<'a> Parser<'a> {
 
     /// Parses a declaration, e.g. `struct Foo { bar: baz }` or `fn myfunc(a: b) -> c { }`
     pub fn struct_declaration(&mut self) -> Result<StructDecl, ParserError> {
-        let span_begin = self.eat_match(TokenKind::Keyword(Keyword::Struct))?.span;
+        let span_begin = self.eat_match(TokenKind::Struct)?.span;
 
         let ident = self.eat_match(TokenKind::Ident(String::new()))?;
 
-        self.eat_match(TokenKind::Symbol(Symbol::LBrace))?;
+        self.eat_match(TokenKind::LBrace)?;
 
         let mut fields = Vec::new();
 
@@ -67,7 +62,7 @@ impl<'a> Parser<'a> {
             }
             Some(_) | None => match self.0.peek() {
                 Some(Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::RBrace),
+                    kind: TokenKind::RBrace,
                     ..
                 })) => {}
                 Some(Ok(t)) => {
@@ -81,7 +76,7 @@ impl<'a> Parser<'a> {
             },
         };
 
-        let end_span = self.eat_match(TokenKind::Symbol(Symbol::RBrace))?.span;
+        let end_span = self.eat_match(TokenKind::RBrace)?.span;
 
         Ok(StructDecl {
             ident,
@@ -92,32 +87,32 @@ impl<'a> Parser<'a> {
 
     /// Parses a declaration, e.g. `struct Foo { bar: baz }` or `fn myfunc(a: b) -> c { }`
     pub fn fn_declaration(&mut self) -> Result<FnDecl, ParserError> {
-        let span_begin = self.eat_match(TokenKind::Keyword(Keyword::Fn))?.span;
+        let span_begin = self.eat_match(TokenKind::Fn)?.span;
 
         let ident = self.eat_match(TokenKind::Ident(String::new()))?;
 
-        self.eat_match(TokenKind::Symbol(Symbol::LParen))?;
+        self.eat_match(TokenKind::LParen)?;
 
         let arguments = self.field_declaration()?;
 
-        self.eat_match(TokenKind::Symbol(Symbol::RParen))?;
+        self.eat_match(TokenKind::RParen)?;
 
         let return_type = if let Some(Ok(Token {
-            kind: TokenKind::Symbol(Symbol::Arrow),
+            kind: TokenKind::Arrow,
             ..
         })) = self.0.peek()
         {
-            self.eat_match(TokenKind::Symbol(Symbol::Arrow))?;
+            self.eat_match(TokenKind::Arrow)?;
             Some(self.eat_match(TokenKind::Ident(String::new()))?)
         } else {
             None
         };
 
-        self.eat_match(TokenKind::Symbol(Symbol::LBrace))?;
+        self.eat_match(TokenKind::LBrace)?;
 
         let statements = self.statements()?;
 
-        let end_span = self.eat_match(TokenKind::Symbol(Symbol::RBrace))?.span;
+        let end_span = self.eat_match(TokenKind::RBrace)?.span;
 
         Ok(FnDecl {
             ident,
@@ -144,17 +139,17 @@ impl<'a> Parser<'a> {
                     TokenKind::Ident(_) => {
                         //println!("<Ident>");
                         let ident = self.eat_match(TokenKind::Ident(String::new()))?;
-                        self.eat_match(TokenKind::Symbol(Symbol::Colon))?;
+                        self.eat_match(TokenKind::Colon)?;
                         let field_type = self.eat_match(TokenKind::Ident(String::new()))?;
 
-                        if let None = self.peek_match(TokenKind::Symbol(Symbol::Comma)) {
+                        if let None = self.peek_match(TokenKind::Comma) {
                             if let Some(_) = self.peek_match(TokenKind::Ident(String::new())) {
                                 // If we encounter this case, we know the next token isn't valid
                                 // so we'll get a proper error by just returning an empty Vec, for now.
                                 return Ok(Vec::new());
                             }
                         } else {
-                            self.eat_match(TokenKind::Symbol(Symbol::Comma))?;
+                            self.eat_match(TokenKind::Comma)?;
                         }
 
                         let ident_span = ident.span.start();
@@ -186,9 +181,7 @@ impl<'a> Parser<'a> {
 
         while let Some(Ok(t)) = self.0.peek().cloned() {
             match t.kind {
-                TokenKind::Keyword(Keyword::Let) => {
-                    stmts.push(StatementDecl::VarDecl(self.var_declaration()?))
-                }
+                TokenKind::Let => stmts.push(StatementDecl::VarDecl(self.var_declaration()?)),
                 _ => break,
             }
         }
@@ -197,26 +190,22 @@ impl<'a> Parser<'a> {
     }
 
     fn var_declaration(&mut self) -> Result<VarDecl, ParserError> {
-        let start_span = self.eat_match(TokenKind::Keyword(Keyword::Let))?
-            .span
-            .start();
+        let start_span = self.eat_match(TokenKind::Let)?.span.start();
 
         let ident = self.eat_match(TokenKind::Ident(String::new()))?;
 
-        let var_type = if let Some(_) = self.peek_match(TokenKind::Symbol(Symbol::Colon)) {
-            self.eat_match(TokenKind::Symbol(Symbol::Colon))?;
+        let var_type = if let Some(_) = self.peek_match(TokenKind::Colon) {
+            self.eat_match(TokenKind::Colon)?;
             Some(self.eat_match(TokenKind::Ident(String::new()))?)
         } else {
             None
         };
 
-        self.eat_match(TokenKind::Operator(Operator::Eq))?;
+        self.eat_match(TokenKind::Assign)?;
 
         let expr = self.expression()?;
 
-        let end_span = self.eat_match(TokenKind::Symbol(Symbol::Semicolon))?
-            .span
-            .end();
+        let end_span = self.eat_match(TokenKind::Semicolon)?.span.end();
 
         Ok(VarDecl {
             ident,
