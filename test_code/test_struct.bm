@@ -1,6 +1,6 @@
 struct Test {
     myfield: type1,
-    myotherfield: type2,
+    myotherfield: type2
     badfield: type,
 }
 
