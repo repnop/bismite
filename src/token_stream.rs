@@ -68,7 +68,11 @@ impl<'a> Iterator for TokenStream<'a> {
                 }
 
                 Ok(Token {
-                    kind: check_reserved(ident),
+                    kind: if let Some(kw) = check_reserved(&ident) {
+                        kw
+                    } else {
+                        TokenKind::Ident(ident)
+                    },
                     span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(pos_end + 1)),
                 })
             }
@@ -82,7 +86,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Operator(Operator::RShift),
+                            kind: TokenKind::RShift,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -93,7 +97,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Comparison(Comparison::GtEq),
+                            kind: TokenKind::GtEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -101,7 +105,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Comparison(Comparison::Gt),
+                        kind: TokenKind::Gt,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -117,7 +121,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Operator(Operator::LShift),
+                            kind: TokenKind::LShift,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -128,7 +132,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Comparison(Comparison::LtEq),
+                            kind: TokenKind::LtEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -136,7 +140,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Comparison(Comparison::Lt),
+                        kind: TokenKind::Lt,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -152,7 +156,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Comparison(Comparison::NotEq),
+                            kind: TokenKind::NotEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -160,7 +164,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Operator(Operator::Not),
+                        kind: TokenKind::Not,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -172,7 +176,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::Period),
+                    kind: TokenKind::Period,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -187,7 +191,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Operator(Operator::MinusEq),
+                            kind: TokenKind::MinusEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -198,7 +202,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Symbol(Symbol::Arrow),
+                            kind: TokenKind::Arrow,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -206,7 +210,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Operator(Operator::Minus),
+                        kind: TokenKind::Minus,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -222,7 +226,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Operator(Operator::PlusEq),
+                            kind: TokenKind::PlusEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -230,7 +234,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Operator(Operator::Plus),
+                        kind: TokenKind::Plus,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -246,7 +250,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Operator(Operator::MultEq),
+                            kind: TokenKind::MultEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -254,7 +258,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Operator(Operator::Mult),
+                        kind: TokenKind::Mult,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -270,7 +274,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Operator(Operator::DivEq),
+                            kind: TokenKind::DivEq,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -288,7 +292,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         return self.next();
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Operator(Operator::Div),
+                        kind: TokenKind::Div,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -304,7 +308,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
-                            kind: TokenKind::Comparison(Comparison::Eq),
+                            kind: TokenKind::EqTo,
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -312,7 +316,7 @@ impl<'a> Iterator for TokenStream<'a> {
                         })
                     }
                     _ => Ok(Token {
-                        kind: TokenKind::Operator(Operator::Eq),
+                        kind: TokenKind::Assign,
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -324,7 +328,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::LParen),
+                    kind: TokenKind::LParen,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -335,7 +339,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::RParen),
+                    kind: TokenKind::RParen,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -346,7 +350,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::LBrace),
+                    kind: TokenKind::LBrace,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -357,7 +361,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::RBrace),
+                    kind: TokenKind::RBrace,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -368,7 +372,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::LBracket),
+                    kind: TokenKind::LBracket,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -379,7 +383,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::RBracket),
+                    kind: TokenKind::RBracket,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -390,7 +394,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::Comma),
+                    kind: TokenKind::Comma,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -401,7 +405,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::Semicolon),
+                    kind: TokenKind::Semicolon,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -412,7 +416,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 Ok(Token {
-                    kind: TokenKind::Symbol(Symbol::Colon),
+                    kind: TokenKind::Colon,
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -680,14 +684,14 @@ fn eat_comment<'a>(iter: &mut Peekable<CharIndices<'a>>, t: Comment) -> Result<(
 }
 
 /// Checks if an identifier is a reserved word.
-fn check_reserved(s: String) -> TokenKind {
-    for &(rep, keyword) in Keyword::keywords() {
+fn check_reserved(s: &str) -> Option<TokenKind> {
+    for &(rep, ref keyword) in (&KEYWORDS).iter() {
         if s == rep {
-            return TokenKind::Keyword(keyword);
+            return Some(keyword.clone());
         }
     }
 
-    TokenKind::Ident(s)
+    None
 }
 
 #[cfg(test)]

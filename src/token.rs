@@ -46,121 +46,41 @@ pub enum TokenKind {
     IntLit(usize, bool),
     /// Identifiers.
     Ident(String),
-    /// Symbols. (Misc symbols, e.g. `(`, `)`, `[`, `]`, etc)
-    Symbol(Symbol),
-    /// Reserved words.
-    Keyword(Keyword),
-    /// Operators for performing operations.
-    Operator(Operator),
-    /// Comparison operators.
-    Comparison(Comparison),
-}
-
-impl TokenKind {
-    pub fn name(&self) -> &'static str {
-        use self::Symbol;
-        use self::TokenKind::*;
-
-        match self {
-            IntLit(_, _) => "integer literal",
-            Ident(_) => "identifier",
-            Symbol(ref s) => match s {
-                &Symbol::LParen => "symbol `(`",
-                &Symbol::RParen => "symbol `)`",
-                &Symbol::LBrace => "symbol `{`",
-                &Symbol::RBrace => "symbol `}`",
-                &Symbol::LBracket => "symbol `[`",
-                &Symbol::RBracket => "symbol `]`",
-                &Symbol::Comma => "symbol `,`",
-                &Symbol::Period => "symbol `.`",
-                &Symbol::Semicolon => "symbol `;`",
-                &Symbol::Colon => "symbol `:`",
-                &Symbol::Arrow => "symbol `->`",
-            },
-            Keyword(_) => "keyword",
-            Operator(_) | Comparison(_) => "operator",
-        }
-    }
-}
-
-impl PartialEq for TokenKind {
-    fn eq(&self, other: &TokenKind) -> bool {
-        use self::TokenKind::*;
-
-        match self {
-            &IntLit(n, _) => match other {
-                &IntLit(m, _) => n == m,
-                _ => false,
-            },
-            &Ident(_) => match other {
-                &Ident(_) => true,
-                _ => false,
-            },
-            &Symbol(ref n) => match other {
-                &Symbol(ref m) => n == m,
-                _ => false,
-            },
-            &Keyword(ref n) => match other {
-                &Keyword(ref m) => n == m,
-                _ => false,
-            },
-            &Operator(ref n) => match other {
-                &Operator(ref m) => n == m,
-                _ => false,
-            },
-            &Comparison(ref n) => match other {
-                &Comparison(ref m) => n == m,
-                _ => false,
-            },
-        }
-    }
-
-    fn ne(&self, other: &TokenKind) -> bool {
-        !self.eq(other)
-    }
-}
-
-/// Reserved keywords.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Keyword {
-    /// Variable declaration/binding.
+    /// `(`
+    LParen,
+    /// `)`
+    RParen,
+    /// `{`
+    LBrace,
+    /// `}`
+    RBrace,
+    /// `[`
+    LBracket,
+    /// `]`
+    RBracket,
+    /// `,`
+    Comma,
+    /// `.`
+    Period,
+    /// `;`
+    Semicolon,
+    /// `:`
+    Colon,
+    /// `->`
+    Arrow,
     /// `let`
     Let,
-    /// Function declaration.
     /// `fn`
     Fn,
     /// If statement.
     /// `if`
     If,
-    /// While statement.
     /// `while`
     While,
-    /// For statement.
     /// `for`
     For,
-    /// Struct/type declaration.
     /// `struct`
     Struct,
-}
-
-const KEYWORDS: [(&str, Keyword); 6] = [
-    ("let", Keyword::Let),
-    ("fn", Keyword::Fn),
-    ("if", Keyword::If),
-    ("for", Keyword::For),
-    ("while", Keyword::While),
-    ("struct", Keyword::Struct),
-];
-
-impl Keyword {
-    pub fn keywords() -> &'static [(&'static str, Keyword)] {
-        &KEYWORDS
-    }
-}
-
-/// Operators for operations, e.g. addition, subtraction, etc.
-#[derive(Debug, PartialEq, Clone)]
-pub enum Operator {
     /// Addition.
     /// `+`
     Plus,
@@ -196,41 +116,10 @@ pub enum Operator {
     Not,
     /// Assign.
     /// `=`
-    Eq,
-}
-
-/// Misc. characters with no specific purpose.
-#[derive(Debug, PartialEq, Clone)]
-pub enum Symbol {
-    /// `(`
-    LParen,
-    /// `)`
-    RParen,
-    /// `{`
-    LBrace,
-    /// `}`
-    RBrace,
-    /// `[`
-    LBracket,
-    /// `]`
-    RBracket,
-    /// `,`
-    Comma,
-    /// `.`
-    Period,
-    /// `;`
-    Semicolon,
-    /// `:`
-    Colon,
-    Arrow,
-}
-
-/// Comparison operators
-#[derive(Debug, PartialEq, Clone)]
-pub enum Comparison {
+    Assign,
     /// Equals to.
     /// `==`
-    Eq,
+    EqTo,
     /// Less than.
     /// `<`
     Lt,
@@ -247,6 +136,99 @@ pub enum Comparison {
     /// `!=`
     NotEq,
 }
+
+impl TokenKind {
+    pub fn name(&self) -> &'static str {
+        use self::TokenKind::*;
+
+        match self {
+            &IntLit(_, _) => "integer literal",
+            &Ident(_) => "identifier",
+            &LParen => "symbol `(`",
+            &RParen => "symbol `)`",
+            &LBrace => "symbol `{`",
+            &RBrace => "symbol `}`",
+            &LBracket => "symbol `[`",
+            &RBracket => "symbol `]`",
+            &Comma => "symbol `,`",
+            &Period => "symbol `.`",
+            &Semicolon => "symbol `;`",
+            &Colon => "symbol `:`",
+            &Arrow => "symbol `->`",
+            &Let => "keyword `let`",
+            &Fn => "keyword `fn`",
+            &If => "keyword `if`",
+            &While => "keyword `while`",
+            &For => "keyword `for`",
+            &Struct => "keyword `struct`",
+            &Plus => "operator `+`",
+            &PlusEq => "operator `+=`",
+            &Minus => "operator `-`",
+            &MinusEq => "operator `-=`",
+            &Mult => "operator `*`",
+            &MultEq => "operator `*=`",
+            &Div => "operator `/`",
+            &DivEq => "operator `/=`",
+            &RShift => "operator `>>`",
+            &LShift => "operator `<<`",
+            &Not => "operator `!`",
+            &Assign => "operator `=`",
+            &EqTo => "operator `==`",
+            &Lt => "operator `<`",
+            &Gt => "operator `>`",
+            &LtEq => "operator `<=`",
+            &GtEq => "operator `>=`",
+            &NotEq => "operator `!=`",
+        }
+    }
+}
+
+impl PartialEq for TokenKind {
+    fn eq(&self, other: &TokenKind) -> bool {
+        use self::TokenKind::*;
+
+        match self {
+            &IntLit(n, _) => match other {
+                &IntLit(m, _) => n == m,
+                _ => false,
+            },
+            &Ident(_) => match other {
+                &Ident(_) => true,
+                _ => false,
+            },
+            tknkind => ::std::mem::discriminant(tknkind) == ::std::mem::discriminant(other),
+        }
+    }
+
+    fn ne(&self, other: &TokenKind) -> bool {
+        !self.eq(other)
+    }
+}
+
+/// Reserved keywords.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Keyword {}
+
+pub const KEYWORDS: [(&str, TokenKind); 6] = [
+    ("let", TokenKind::Let),
+    ("fn", TokenKind::Fn),
+    ("if", TokenKind::If),
+    ("for", TokenKind::For),
+    ("while", TokenKind::While),
+    ("struct", TokenKind::Struct),
+];
+
+/// Operators for operations, e.g. addition, subtraction, etc.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Operator {}
+
+/// Misc. characters with no specific purpose.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Symbol {}
+
+/// Comparison operators
+#[derive(Debug, PartialEq, Clone)]
+pub enum Comparison {}
 
 /// Type of comment.
 #[derive(Debug, PartialEq)]
