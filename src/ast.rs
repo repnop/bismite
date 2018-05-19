@@ -1,60 +1,60 @@
 use token::*;
 
 #[derive(Debug)]
-pub struct Decls {
-    structs: Vec<StructDecl>,
-    fns: Vec<FnDecl>,
+pub struct Decls<'a> {
+    structs: Vec<StructDecl<'a>>,
+    fns: Vec<FnDecl<'a>>,
 }
 
-impl Decls {
-    pub fn new() -> Decls {
+impl<'a> Decls<'a> {
+    pub fn new() -> Decls<'a> {
         Decls {
             structs: Vec::new(),
             fns: Vec::new(),
         }
     }
 
-    pub fn push_struct(&mut self, s: StructDecl) {
+    pub fn push_struct(&mut self, s: StructDecl<'a>) {
         self.structs.push(s);
     }
 
-    pub fn push_fn(&mut self, s: FnDecl) {
+    pub fn push_fn(&mut self, s: FnDecl<'a>) {
         self.fns.push(s);
     }
 }
 
 #[derive(Debug)]
-pub struct StructDecl {
-    pub ident: Token,
-    pub fields: Vec<FieldDecl>,
+pub struct StructDecl<'a> {
+    pub ident: Token<'a>,
+    pub fields: Vec<FieldDecl<'a>>,
     pub span: ByteSpan,
 }
 
 #[derive(Debug)]
-pub struct FieldDecl {
-    pub ident: Token,
-    pub field_type: Token,
+pub struct FieldDecl<'a> {
+    pub ident: Token<'a>,
+    pub field_type: Token<'a>,
     pub span: ByteSpan,
 }
 
 #[derive(Debug)]
-pub struct FnDecl {
-    pub ident: Token,
-    pub arguments: Vec<FieldDecl>,
-    pub return_type: Option<Token>,
-    pub statements: Vec<StatementDecl>,
+pub struct FnDecl<'a> {
+    pub ident: Token<'a>,
+    pub arguments: Vec<FieldDecl<'a>>,
+    pub return_type: Option<Token<'a>>,
+    pub statements: Vec<StatementDecl<'a>>,
     pub span: ByteSpan,
 }
 
 #[derive(Debug)]
-pub enum StatementDecl {
-    VarDecl(VarDecl),
+pub enum StatementDecl<'a> {
+    VarDecl(VarDecl<'a>),
 }
 
 #[derive(Debug)]
-pub struct VarDecl {
-    pub ident: Token,
-    pub var_type: Option<Token>,
+pub struct VarDecl<'a> {
+    pub ident: Token<'a>,
+    pub var_type: Option<Token<'a>>,
     pub value: Expression,
     pub span: ByteSpan,
 }

@@ -1,10 +1,12 @@
 pub use codespan::ByteSpan;
+use std::collections::HashMap;
 
 /// Token type. Contains the kind of token, and the location within the source
 /// that it exists.
 #[derive(Debug, Clone)]
-pub struct Token {
+pub struct Token<'a> {
     pub kind: TokenKind,
+    pub lit: &'a str,
     pub span: ByteSpan,
 }
 
@@ -22,7 +24,7 @@ impl TokenError {
         use self::TokenError::*;
 
         match self {
-            &InvalidToken(ref t, ref span) => span.clone(),
+            &InvalidToken(_, ref span) => span.clone(),
             &InvalidLiteral(ref span) => span.clone(),
         }
     }
@@ -40,12 +42,12 @@ impl ::std::fmt::Display for TokenError {
 }
 
 /// The type of token.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
     /// Integer literals.
-    IntLit(usize, bool),
+    IntLit,
     /// Identifiers.
-    Ident(String),
+    Ident,
     /// `(`
     LParen,
     /// `)`
@@ -142,8 +144,8 @@ impl TokenKind {
         use self::TokenKind::*;
 
         match self {
-            &IntLit(_, _) => "integer literal",
-            &Ident(_) => "identifier",
+            &IntLit => "integer literal",
+            &Ident => "identifier",
             &LParen => "symbol `(`",
             &RParen => "symbol `)`",
             &LBrace => "symbol `{`",
@@ -183,40 +185,21 @@ impl TokenKind {
     }
 }
 
-impl PartialEq for TokenKind {
-    fn eq(&self, other: &TokenKind) -> bool {
-        use self::TokenKind::*;
-
-        match self {
-            &IntLit(n, _) => match other {
-                &IntLit(m, _) => n == m,
-                _ => false,
-            },
-            &Ident(_) => match other {
-                &Ident(_) => true,
-                _ => false,
-            },
-            tknkind => ::std::mem::discriminant(tknkind) == ::std::mem::discriminant(other),
-        }
-    }
-
-    fn ne(&self, other: &TokenKind) -> bool {
-        !self.eq(other)
-    }
-}
-
 /// Reserved keywords.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Keyword {}
+lazy_static! {
+    pub static ref KEYWORDS: HashMap<&'static str, TokenKind> = {
+        let mut kws = HashMap::new();
 
-pub const KEYWORDS: [(&str, TokenKind); 6] = [
-    ("let", TokenKind::Let),
-    ("fn", TokenKind::Fn),
-    ("if", TokenKind::If),
-    ("for", TokenKind::For),
-    ("while", TokenKind::While),
-    ("struct", TokenKind::Struct),
-];
+        kws.insert("let", TokenKind::Let);
+        kws.insert("fn", TokenKind::Fn);
+        kws.insert("if", TokenKind::If);
+        kws.insert("for", TokenKind::For);
+        kws.insert("while", TokenKind::While);
+        kws.insert("struct", TokenKind::Struct);
+
+        kws
+    };
+}
 
 /// Operators for operations, e.g. addition, subtraction, etc.
 #[derive(Debug, PartialEq, Clone)]

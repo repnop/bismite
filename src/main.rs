@@ -1,5 +1,8 @@
 extern crate codespan;
 extern crate codespan_reporting;
+extern crate isomorphism;
+#[macro_use]
+extern crate lazy_static;
 extern crate structopt;
 #[macro_use]
 extern crate structopt_derive;

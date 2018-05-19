@@ -1,48 +1,79 @@
 use codespan::ByteIndex;
-use std::{iter::Peekable, str::CharIndices};
+use std::{self, str::CharIndices};
 use token::*;
+
+#[derive(Debug)]
+pub struct PeekableCharIndices<'a> {
+    iter: CharIndices<'a>,
+}
+
+impl<'a> PeekableCharIndices<'a> {
+    pub fn new(iter: CharIndices<'a>) -> Self {
+        Self { iter }
+    }
+
+    pub fn peek(&mut self) -> Option<(usize, char)> {
+        self.iter.clone().next()
+    }
+}
+
+impl<'a> std::ops::Deref for PeekableCharIndices<'a> {
+    type Target = CharIndices<'a>;
+
+    fn deref(&self) -> &CharIndices<'a> {
+        &self.iter
+    }
+}
+
+impl<'a> std::ops::DerefMut for PeekableCharIndices<'a> {
+    fn deref_mut(&mut self) -> &mut CharIndices<'a> {
+        &mut self.iter
+    }
+}
 
 /// Iterates over tokens within a source file.
 #[derive(Debug)]
-pub struct TokenStream<'a>(Peekable<CharIndices<'a>>);
+pub struct TokenStream<'a>(PeekableCharIndices<'a>);
 
 impl<'a> TokenStream<'a> {
     /// Create a new `TokenStream`.
     pub fn new(contents: &'a str) -> TokenStream<'a> {
-        TokenStream(contents.char_indices().peekable())
+        TokenStream(PeekableCharIndices::new(contents.char_indices()))
     }
 }
 
 impl<'a> Iterator for TokenStream<'a> {
     /// Success or failure of the token parse.
-    type Item = Result<Token, TokenError>;
+    type Item = Result<Token<'a>, TokenError>;
 
     /// Lexes and returns the next token.
-    fn next(&mut self) -> Option<Result<Token, TokenError>> {
-        while let Some(&(_, c)) = self.0.peek() {
+    fn next(&mut self) -> Option<Result<Token<'a>, TokenError>> {
+        while let Some((_, c)) = self.0.peek() {
             if c.is_whitespace() {
                 self.0.next().unwrap();
-                continue;
             } else {
                 break;
             }
         }
 
-        let &(mut pos_start, ch) = self.0.peek()?;
-        let mut pos_end = 0;
+        let (pos_start, ch) = self.0.peek()?;
 
-        pos_start += 1;
+        let mut pos_end = pos_start as u32;
+        let mut str_slice = self.0.as_str();
+
+        //pos_start += 1;
 
         return Some(match ch {
             // Parse numbers.
             '0'...'9' => match eat_number(&mut self.0) {
-                Ok((idx, n, of)) => Ok(Token {
-                    kind: TokenKind::IntLit(n, of),
-                    span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(idx + 1)),
+                Ok(idx) => Ok(Token {
+                    kind: TokenKind::IntLit,
+                    lit: &str_slice[..idx as usize - pos_start],
+                    span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(idx)),
                 }),
                 Err(n) => Err(TokenError::InvalidLiteral(ByteSpan::new(
                     ByteIndex(pos_start as u32),
-                    ByteIndex(if let Some(&(idx, _)) = self.0.peek() {
+                    ByteIndex(if let Some((idx, _)) = self.0.peek() {
                         idx as u32
                     } else {
                         n
@@ -52,27 +83,23 @@ impl<'a> Iterator for TokenStream<'a> {
 
             // Parse identifiers.
             '_' | 'a'...'z' | 'A'...'Z' => {
-                let mut ident = String::new();
-
-                'id: while let Some(&(idx, ch)) = self.0.peek() {
+                'id: while let Some((idx, ch)) = self.0.peek() {
                     if !ch.is_alphanumeric() && ch != '_' {
-                        pos_end = idx as u32;
                         break 'id;
                     }
-
-                    ident.push(self.0.next().unwrap().1);
+                    pos_end += 1;
+                    self.0.next().unwrap();
                 }
 
-                if pos_end == 0 {
-                    pos_end = pos_start as u32 + 1;
-                }
+                str_slice = &str_slice[..pos_end as usize - pos_start];
 
                 Ok(Token {
-                    kind: if let Some(kw) = check_reserved(&ident) {
+                    kind: if let Some(kw) = check_reserved(str_slice) {
                         kw
                     } else {
-                        TokenKind::Ident(ident)
+                        TokenKind::Ident
                     },
+                    lit: str_slice,
                     span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(pos_end + 1)),
                 })
             }
@@ -82,22 +109,24 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '>')) => {
+                    Some((_, '>')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::RShift,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
                             ),
                         })
                     }
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::GtEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -106,6 +135,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Gt,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -117,22 +147,24 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '<')) => {
+                    Some((_, '<')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::LShift,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
                             ),
                         })
                     }
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::LtEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -141,6 +173,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Lt,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -152,11 +185,12 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::NotEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -165,6 +199,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Not,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -177,6 +212,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::Period,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -187,22 +223,24 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::MinusEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
                             ),
                         })
                     }
-                    Some(&(_, '>')) => {
+                    Some((_, '>')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::Arrow,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -211,6 +249,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Minus,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -222,11 +261,12 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::PlusEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -235,6 +275,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Plus,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -246,11 +287,12 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::MultEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -259,6 +301,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Mult,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -270,29 +313,31 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::DivEq,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
                             ),
                         })
                     }
-                    Some(&(_, '/')) => {
+                    Some((_, '/')) => {
                         eat_comment(&mut self.0, Comment::Single).unwrap();
                         // TODO: fix?
                         return self.next();
                     }
-                    Some(&(_, '*')) => {
+                    Some((_, '*')) => {
                         eat_comment(&mut self.0, Comment::Multi);
                         // TODO: fix?
                         return self.next();
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Div,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -304,11 +349,12 @@ impl<'a> Iterator for TokenStream<'a> {
                 self.0.next().unwrap();
 
                 match self.0.peek() {
-                    Some(&(_, '=')) => {
+                    Some((_, '=')) => {
                         let idx = self.0.next().unwrap().0 + 1;
 
                         Ok(Token {
                             kind: TokenKind::EqTo,
+                            lit: &str_slice[..2],
                             span: ByteSpan::new(
                                 ByteIndex(pos_start as u32),
                                 ByteIndex(idx as u32 + 1),
@@ -317,6 +363,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     }
                     _ => Ok(Token {
                         kind: TokenKind::Assign,
+                        lit: &str_slice[..1],
                         span: ByteSpan::new(
                             ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
@@ -329,6 +376,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::LParen,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -340,6 +388,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::RParen,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -351,6 +400,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::LBrace,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -362,6 +412,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::RBrace,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -373,6 +424,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::LBracket,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -384,6 +436,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::RBracket,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -395,6 +448,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::Comma,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -406,6 +460,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::Semicolon,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -417,6 +472,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
                 Ok(Token {
                     kind: TokenKind::Colon,
+                    lit: &str_slice[..1],
                     span: ByteSpan::new(
                         ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
@@ -430,11 +486,11 @@ impl<'a> Iterator for TokenStream<'a> {
 }
 
 /// Consumes invalid tokens.
-fn eat_invalid<'a>(iter: &mut Peekable<CharIndices<'a>>, start: u32) -> TokenError {
+fn eat_invalid<'a>(iter: &mut PeekableCharIndices<'a>, start: u32) -> TokenError {
     let mut invalid = String::new();
     let mut end_idx = start as usize;
 
-    while let Some(&(idx, ch)) = iter.peek() {
+    while let Some((idx, ch)) = iter.peek() {
         if ch.is_whitespace() {
             end_idx = idx + 1;
             break;
@@ -584,76 +640,69 @@ const DIGIT_VALUES: [Option<(u8, usize)>; 128] = [
 
 /// Consume a integer literal. Returns the ending byte position within the source file, and
 /// the parsed number, or `None` which signifies an invalid number.
-fn eat_number<'a>(iter: &mut Peekable<CharIndices<'a>>) -> Result<(u32, usize, bool), u32> {
-    let mut result = 0usize;
-    let mut end_index = 0;
-    let mut overflow = false;
-    let start = iter.peek().unwrap().0 as u32;
+fn eat_number<'a>(iter: &mut PeekableCharIndices<'a>) -> Result<u32, u32> {
+    let (start, c) = iter.peek().unwrap();
+    let start = start as u32;
+    let mut end_index = start;
 
-    let radix = if let Some(&(_, '0')) = iter.peek() {
+    let radix = if c == '0' {
         iter.next().unwrap();
-        get_radix(iter)
+        get_radix(iter).map_err(|_| start + 1)?
     } else {
-        10usize
+        10
     };
 
-    while let Some(&(_, c)) = iter.peek() {
-        if c.is_whitespace() || !c.is_digit(radix as u32) {
+    while let Some((_, c)) = iter.peek() {
+        if c.is_whitespace()
+            || (!c.is_digit(radix as u32) && DIGIT_VALUES[c as u8 as usize] == None
+                && !c.is_alphabetic())
+        {
             break;
         }
 
-        if let Some((val, rdx)) = DIGIT_VALUES[c as u8 as usize] {
-            iter.next().unwrap();
-
+        if let Some((_, rdx)) = DIGIT_VALUES[c as u8 as usize] {
+            end_index = iter.next().unwrap().0 as u32;
             if rdx > radix {
                 return Err(eat_invalid(iter, start).span().end().0);
-            }
-
-            end_index += 1;
-
-            let (r, of) = result.overflowing_mul(radix as usize);
-            result = r;
-
-            if !overflow {
-                overflow = of;
-            }
-
-            let (r, of) = result.overflowing_add(val as usize);
-            result = r;
-
-            if !overflow {
-                overflow = of;
             }
         } else {
             return Err(eat_invalid(iter, start).span().end().0);
         }
     }
 
-    // Free me from this lexing hell
-
-    Ok((end_index, result, overflow))
+    Ok(end_index + 1)
 }
 
-fn get_radix<'a>(iter: &mut Peekable<CharIndices<'a>>) -> usize {
-    match iter.peek() {
-        Some(&(_, 'x')) => {
+fn get_radix<'a>(iter: &mut PeekableCharIndices<'a>) -> Result<usize, ()> {
+    let radix = match iter.peek() {
+        Some((_, 'x')) => {
             iter.next().unwrap();
             16
         }
-        Some(&(_, 'o')) => {
+        Some((_, 'o')) => {
             iter.next().unwrap();
             8
         }
-        Some(&(_, 'b')) => {
+        Some((_, 'b')) => {
             iter.next().unwrap();
             2
         }
-        _ => 10,
-    }
+        Some((_, c)) => {
+            if !c.is_digit(10) {
+                return Err(());
+            } else {
+                10
+            }
+        }
+        None => 10,
+        _ => return Err(()),
+    };
+
+    Ok(radix)
 }
 
 /// Consumes a comment.
-fn eat_comment<'a>(iter: &mut Peekable<CharIndices<'a>>, t: Comment) -> Result<(), ()> {
+fn eat_comment<'a>(iter: &mut PeekableCharIndices<'a>, t: Comment) -> Result<(), ()> {
     match t {
         Comment::Single => {
             while let Some((_, ch)) = iter.next() {
@@ -685,13 +734,7 @@ fn eat_comment<'a>(iter: &mut Peekable<CharIndices<'a>>, t: Comment) -> Result<(
 
 /// Checks if an identifier is a reserved word.
 fn check_reserved(s: &str) -> Option<TokenKind> {
-    for &(rep, ref keyword) in (&KEYWORDS).iter() {
-        if s == rep {
-            return Some(keyword.clone());
-        }
-    }
-
-    None
+    KEYWORDS.get(s).map(|&t| t)
 }
 
 #[cfg(test)]
@@ -700,25 +743,24 @@ mod tests {
     #[test]
     fn number() {
         let nums = [
-            ("0", 0),
-            ("11", 11),
-            ("0xA", 0xA),
-            ("0b11", 0b11),
-            ("0o10", 0o10),
-            ("18446744073709551615", 18446744073709551615),
-            ("18446744073709551616", 0),
+            "0",
+            "11",
+            "0xA",
+            "0b11",
+            "0o10",
+            "18446744073709551615",
+            "18446744073709551616",
         ];
 
         let fails = ["0b2", "0xJ", "0o8", "0xFFasdf"];
 
         for num in &nums {
-            let mut ts = TokenStream::new(num.0);
-            let Token { kind: a, .. } = ts.next().expect("Some").expect("Ok");
+            let mut ts = TokenStream::new(num);
+            let tkn = ts.next();
+            println!("{:?}", tkn);
+            let Token { kind: a, .. } = tkn.expect("Some").expect("Ok");
 
-            match a {
-                TokenKind::IntLit(n, _) => assert!(n == num.1, format!("{} != {}", n, num.1)),
-                _ => unreachable!(),
-            }
+            assert_eq!(a, TokenKind::IntLit);
 
             assert!(ts.next().is_none());
         }
@@ -726,6 +768,7 @@ mod tests {
         for fail in &fails {
             let mut ts = TokenStream::new(fail);
             let v = ts.next().expect("Some");
+            println!("{}", fail);
             assert!(v.is_err());
 
             assert!(ts.next().is_none());
@@ -735,13 +778,15 @@ mod tests {
     #[test]
     fn idents() {
         let idents = ["asdf", "a1234", "_", "_abc", "_1234"];
+        let multidents = ["asdf __", "reeeee eeeeer"];
 
         for ident in &idents {
             let mut ts = TokenStream::new(ident);
-
+            assert!(ts.0.peek().is_some());
             if let Some(Ok(token)) = ts.next() {
                 if let Token {
-                    kind: TokenKind::Ident(s),
+                    kind: TokenKind::Ident,
+                    lit: s,
                     ..
                 } = token
                 {
@@ -753,5 +798,48 @@ mod tests {
                 panic!("{}", format!("Valid ident {} not parsed correctly.", ident));
             }
         }
+    }
+
+    #[test]
+    fn tokens() {
+        let good_tkns = "let fn ident 1 0x1 0b1 0o1 + += - -= * *= / /= >> << ! = == < > <= >= != ( ) { } [ ] , . ;";
+
+        let mut ts = TokenStream::new(good_tkns);
+
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Let);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Fn);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Ident);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::IntLit);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::IntLit);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::IntLit);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::IntLit);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Plus);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::PlusEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Minus);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::MinusEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Mult);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::MultEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Div);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::DivEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::RShift);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::LShift);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Not);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Assign);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::EqTo);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Lt);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Gt);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::LtEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::GtEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::NotEq);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::LParen);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::RParen);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::LBrace);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::RBrace);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::LBracket);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::RBracket);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Comma);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Period);
+        assert_eq!(ts.next().unwrap().unwrap().kind, TokenKind::Semicolon);
+        assert!(ts.next().is_none());
     }
 }
