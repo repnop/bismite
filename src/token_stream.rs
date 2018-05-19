@@ -83,7 +83,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
             // Parse identifiers.
             '_' | 'a'...'z' | 'A'...'Z' => {
-                'id: while let Some((idx, ch)) = self.0.peek() {
+                'id: while let Some((_, ch)) = self.0.peek() {
                     if !ch.is_alphanumeric() && ch != '_' {
                         break 'id;
                     }
@@ -695,7 +695,6 @@ fn get_radix<'a>(iter: &mut PeekableCharIndices<'a>) -> Result<usize, ()> {
             }
         }
         None => 10,
-        _ => return Err(()),
     };
 
     Ok(radix)
@@ -778,7 +777,6 @@ mod tests {
     #[test]
     fn idents() {
         let idents = ["asdf", "a1234", "_", "_abc", "_1234"];
-        let multidents = ["asdf __", "reeeee eeeeer"];
 
         for ident in &idents {
             let mut ts = TokenStream::new(ident);
