@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
-        Ok(self.tier_three_expr()?)
+        Ok(self.tier_four_expr()?)
     }
 
     fn parenthesized_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
@@ -268,6 +268,17 @@ impl<'a> Parser<'a> {
 
         if let Some(_) = self.peek_group(&TIER3_OPS) {
             let op = self.eat_group(&TIER3_OPS)?;
+            expr = Expression::Binary(Box::new(expr), op, Box::new(self.expression()?));
+        }
+
+        Ok(expr)
+    }
+
+    fn tier_four_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        let mut expr = self.tier_three_expr()?;
+
+        if let Some(_) = self.peek_group(&TIER4_OPS) {
+            let op = self.eat_group(&TIER4_OPS)?;
             expr = Expression::Binary(Box::new(expr), op, Box::new(self.expression()?));
         }
 
