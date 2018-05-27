@@ -1,6 +1,27 @@
 pub use codespan::ByteSpan;
 use std::collections::HashMap;
 
+pub const TIER0_KINDS: [TokenKind; 3] = [TokenKind::LParen, TokenKind::Ident, TokenKind::IntLit];
+
+pub const TIER1_OPS: [TokenKind; 3] = [TokenKind::Minus, TokenKind::Not, TokenKind::Mult];
+
+pub const TIER2_OPS: [TokenKind; 4] = [
+    TokenKind::Mult,
+    TokenKind::Div,
+    TokenKind::LShift,
+    TokenKind::RShift,
+];
+
+pub const TIER3_OPS: [TokenKind; 2] = [TokenKind::Plus, TokenKind::Minus];
+
+pub const TIER4_OPS: [TokenKind; 5] = [
+    TokenKind::Gt,
+    TokenKind::GtEq,
+    TokenKind::Lt,
+    TokenKind::LtEq,
+    TokenKind::NotEq,
+];
+
 /// Token type. Contains the kind of token, and the location within the source
 /// that it exists.
 #[derive(Debug, Clone)]
@@ -74,7 +95,6 @@ pub enum TokenKind {
     Let,
     /// `fn`
     Fn,
-    /// If statement.
     /// `if`
     If,
     /// `while`
@@ -200,18 +220,6 @@ lazy_static! {
         kws
     };
 }
-
-/// Operators for operations, e.g. addition, subtraction, etc.
-#[derive(Debug, PartialEq, Clone)]
-pub enum Operator {}
-
-/// Misc. characters with no specific purpose.
-#[derive(Debug, PartialEq, Clone)]
-pub enum Symbol {}
-
-/// Comparison operators
-#[derive(Debug, PartialEq, Clone)]
-pub enum Comparison {}
 
 /// Type of comment.
 #[derive(Debug, PartialEq)]

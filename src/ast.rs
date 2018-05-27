@@ -55,12 +55,15 @@ pub enum StatementDecl<'a> {
 pub struct VarDecl<'a> {
     pub ident: Token<'a>,
     pub var_type: Option<Token<'a>>,
-    pub value: Expression,
+    pub value: Expression<'a>,
     pub span: ByteSpan,
 }
 
-#[derive(Debug)]
-pub enum Expression {
-    Literal(TokenKind),
+#[derive(Debug, Clone)]
+pub enum Expression<'a> {
+    IntegerLiteral(Token<'a>),
+    Identifier(Token<'a>),
+    Unary(Token<'a>, Box<Expression<'a>>),
+    Binary(Box<Expression<'a>>, Token<'a>, Box<Expression<'a>>),
     Other,
 }

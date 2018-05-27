@@ -69,7 +69,7 @@ impl<'a> Iterator for TokenStream<'a> {
                 Ok(idx) => Ok(Token {
                     kind: TokenKind::IntLit,
                     lit: &str_slice[..idx as usize - pos_start],
-                    span: ByteSpan::new(ByteIndex(pos_start as u32), ByteIndex(idx)),
+                    span: ByteSpan::new(ByteIndex(pos_start as u32 + 1), ByteIndex(idx + 1)),
                 }),
                 Err(n) => Err(TokenError::InvalidLiteral(ByteSpan::new(
                     ByteIndex(pos_start as u32),
@@ -83,14 +83,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
             // Parse identifiers.
             '_' | 'a'...'z' | 'A'...'Z' => {
-                'id: while let Some((_, ch)) = self.0.peek() {
-                    if !ch.is_alphanumeric() && ch != '_' {
-                        break 'id;
-                    }
-                    pos_end += 1;
-                    self.0.next().unwrap();
-                }
-
+                pos_end = eat_ident(&mut self.0);
                 str_slice = &str_slice[..pos_end as usize - pos_start];
 
                 Ok(Token {
@@ -505,6 +498,19 @@ fn eat_invalid<'a>(iter: &mut PeekableCharIndices<'a>, start: u32) -> TokenError
         invalid,
         ByteSpan::new(ByteIndex(start), ByteIndex(end_idx as u32 + 1)),
     )
+}
+
+fn eat_ident<'a>(iter: &mut PeekableCharIndices<'a>) -> u32 {
+    let mut pos_end = iter.peek().unwrap().0;
+
+    while let Some((_, ch)) = iter.peek() {
+        if !ch.is_alphanumeric() && ch != '_' {
+            break;
+        }
+        pos_end = iter.next().unwrap().0;
+    }
+
+    pos_end as u32 + 1
 }
 
 const DIGIT_VALUES: [Option<(u8, usize)>; 128] = [

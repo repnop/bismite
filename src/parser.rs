@@ -212,16 +212,64 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn expression(&mut self) -> Result<Expression, ParserError<'a>> {
-        let expr = if let Some(Ok(_)) = self.0.peek().cloned() {
-            let tkn = self.0.next().unwrap().unwrap();
-            match tkn.kind {
-                intlit @ TokenKind::IntLit => Expression::Literal(intlit),
-                _ => Expression::Other,
-            }
+    fn expression(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        Ok(self.tier_three_expr()?)
+    }
+
+    fn parenthesized_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        self.eat_match(TokenKind::LParen)?;
+        let expr = self.expression()?;
+        self.eat_match(TokenKind::RParen)?;
+
+        Ok(expr)
+    }
+
+    fn unary_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        if let Some(op) = self.peek_group(&TIER1_OPS) {
+            let op = self.eat_group(&TIER1_OPS)?;
+            let expr = self.expression()?;
+
+            Ok(Expression::Unary(op, Box::new(expr)))
         } else {
-            return Err(ParserError::UnexpectedEOF);
-        };
+            Ok(self.base_expr()?)
+        }
+    }
+
+    fn base_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        if let Some(token) = self.peek_group(&TIER0_KINDS) {
+            return match token.kind {
+                TokenKind::LParen => Ok(self.parenthesized_expr()?),
+                TokenKind::IntLit => Ok(Expression::IntegerLiteral(self.eat_match(
+                    TokenKind::IntLit,
+                ).unwrap())),
+                TokenKind::Ident => Ok(Expression::Identifier(
+                    self.eat_match(TokenKind::Ident).unwrap(),
+                )),
+                _ => Err(self.eat_group(&TIER0_KINDS).unwrap_err()),
+            };
+        }
+
+        Err(self.eat_group(&TIER0_KINDS).unwrap_err())
+    }
+
+    fn tier_two_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        let mut expr = self.unary_expr()?;
+
+        if let Some(_) = self.peek_group(&TIER2_OPS) {
+            let op = self.eat_group(&TIER2_OPS)?;
+            expr = Expression::Binary(Box::new(expr), op, Box::new(self.expression()?));
+        }
+
+        Ok(expr)
+    }
+
+    fn tier_three_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+        let mut expr = self.tier_two_expr()?;
+
+        if let Some(_) = self.peek_group(&TIER3_OPS) {
+            let op = self.eat_group(&TIER3_OPS)?;
+            expr = Expression::Binary(Box::new(expr), op, Box::new(self.expression()?));
+        }
 
         Ok(expr)
     }
@@ -244,12 +292,24 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn eat_group(&mut self, kinds: &'a [TokenKind]) -> Result<Token<'a>, ParserError<'a>> {
+        let token = match self.0.next() {
+            Some(tkn) => tkn,
+            None => return Err(ParserError::UnexpectedEOF),
+        }?;
+
+        if kinds.contains(&token.kind) {
+            Ok(token)
+        } else {
+            Err(ParserError::UnexpectedInGroup(token, kinds))
+        }
+    }
+
     /// Peeks at the next token, returning `None` if the token types are different.
     fn peek_match(&mut self, tk: TokenKind) -> Option<Token<'a>> {
-        // TODO: fix unwrap
-        let token = match self.0.peek().unwrap() {
-            Ok(tkn) => tkn,
-            Err(_) => return None,
+        let token = match self.0.peek() {
+            Some(Ok(tkn)) => tkn,
+            _ => return None,
         };
 
         if token.kind == tk {
@@ -259,7 +319,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    //fn make_error(&mut self, err: NumberedError)
+    fn peek_group(&mut self, kinds: &'a [TokenKind]) -> Option<Token<'a>> {
+        let token = match self.0.peek() {
+            Some(Ok(tkn)) => tkn,
+            _ => return None,
+        };
+
+        if kinds.contains(&token.kind) {
+            Some(token.clone())
+        } else {
+            None
+        }
+    }
 }
 
 /// Represents a parser error.
@@ -270,6 +341,7 @@ pub enum ParserError<'a> {
     /// Error for finding an unexpected token type.
     // TODO: Add what it expected.
     UnexpectedToken(Token<'a>, TokenKind),
+    UnexpectedInGroup(Token<'a>, &'a [TokenKind]),
     /// Unexpectedly hit end of file.
     UnexpectedEOF,
 }
@@ -287,6 +359,17 @@ impl<'a> ::std::fmt::Display for ParserError<'a> {
                 t.kind.name(),
                 k.name()
             ),
+            &UnexpectedInGroup(ref tkn, ref kinds) => {
+                write!(
+                    f,
+                    "Unexpected token: found {}, expected one of the following: ",
+                    tkn.kind.name()
+                )?;
+                for kind in kinds.iter() {
+                    write!(f, "{}, ", kind.name());
+                }
+                Ok(())
+            }
             UnexpectedEOF => write!(f, "Unexpectedly hit end of file."),
         }
     }

@@ -1,12 +1,14 @@
 struct Test {
     myfield: type1,
-    myotherfield: type2
+    myotherfield: type2,
     badfield: type,
 }
 
 fn myfn(arg1: Test) -> returntype {
-    let myvar = 10;
+    let myvar = (10);
     let myvar2: type = 621;
+
+    let multtest = 10 + 5 * -2;
 }
 
 fn myfn2() {
