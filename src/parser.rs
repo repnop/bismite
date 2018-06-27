@@ -5,6 +5,8 @@ use ast::*;
 use token::*;
 use token_stream::*;
 
+type ParseResult<'a, T> = Result<T, ParserError<'a>>;
+
 /// Uses a `TokenStream` to parse the source code.
 #[derive(Debug)]
 pub struct Parser<'a>(pub Peekable<TokenStream<'a>>);
@@ -12,12 +14,12 @@ pub struct Parser<'a>(pub Peekable<TokenStream<'a>>);
 impl<'a> Parser<'a> {
     /// Grammar starts here. Attempts to match on declarations and parses them.
     /// Returns an AST or errors.
-    pub fn begin_parse(&mut self) -> Result<Decls<'a>, ParserError<'a>> {
+    pub fn begin_parse(&mut self) -> ParseResult<'a, Decls<'a>> {
         let mut decls = Decls::new();
 
         loop {
             // TODO: find a way to not need to clone?
-            let token = self.0.peek().cloned();
+            let token = self.0.peek().map(|&r| r);
 
             // If we have a token, match on it and see if it is valid.
             if let Some(tkn) = token {
@@ -39,12 +41,12 @@ impl<'a> Parser<'a> {
             }
         }
 
-        println!("{:#?}", decls);
+        //println!("{:#?}", decls);
         Ok(decls)
     }
 
     /// Parses a declaration, e.g. `struct Foo { bar: baz }` or `fn myfunc(a: b) -> c { }`
-    pub fn struct_declaration(&mut self) -> Result<StructDecl<'a>, ParserError<'a>> {
+    pub fn struct_declaration(&mut self) -> ParseResult<'a, StructDecl<'a>> {
         let span_begin = self.eat_match(TokenKind::Struct)?.span;
 
         let ident = self.eat_match(TokenKind::Ident)?;
@@ -83,7 +85,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a declaration, e.g. `struct Foo { bar: baz }` or `fn myfunc(a: b) -> c { }`
-    pub fn fn_declaration(&mut self) -> Result<FnDecl<'a>, ParserError<'a>> {
+    pub fn fn_declaration(&mut self) -> ParseResult<'a, FnDecl<'a>> {
         let span_begin = self.eat_match(TokenKind::Fn)?.span;
 
         let ident = self.eat_match(TokenKind::Ident)?;
@@ -121,12 +123,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a field declaration, e.g. a struct field or function argument
-    fn field_declaration(&mut self) -> Result<Vec<FieldDecl<'a>>, ParserError<'a>> {
+    fn field_declaration(&mut self) -> ParseResult<'a, Vec<FieldDecl<'a>>> {
         let mut fields = Vec::new();
 
         // `loop` to parse zero or more field declarations.
         loop {
-            let token = self.0.peek().cloned();
+            let token = self.0.peek().map(|&r| r);
 
             if let Some(tkn) = token {
                 let tkn = tkn?;
@@ -173,10 +175,10 @@ impl<'a> Parser<'a> {
         Ok(fields)
     }
 
-    fn statements(&mut self) -> Result<Vec<StatementDecl<'a>>, ParserError<'a>> {
+    fn statements(&mut self) -> ParseResult<'a, Vec<StatementDecl<'a>>> {
         let mut stmts = Vec::new();
 
-        while let Some(Ok(t)) = self.0.peek().cloned() {
+        while let Some(Ok(t)) = self.0.peek().map(|&r| r) {
             match t.kind {
                 TokenKind::Let => stmts.push(StatementDecl::VarDecl(self.var_declaration()?)),
                 _ => break,
@@ -186,7 +188,7 @@ impl<'a> Parser<'a> {
         Ok(stmts)
     }
 
-    fn var_declaration(&mut self) -> Result<VarDecl<'a>, ParserError<'a>> {
+    fn var_declaration(&mut self) -> ParseResult<'a, VarDecl<'a>> {
         let start_span = self.eat_match(TokenKind::Let)?.span.start();
 
         let ident = self.eat_match(TokenKind::Ident)?;
@@ -212,11 +214,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn expression(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn expression(&mut self) -> ParseResult<'a, Expression<'a>> {
         Ok(self.tier_four_expr()?)
     }
 
-    fn parenthesized_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn parenthesized_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
         self.eat_match(TokenKind::LParen)?;
         let expr = self.expression()?;
         self.eat_match(TokenKind::RParen)?;
@@ -224,7 +226,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn unary_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn unary_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
         if let Some(op) = self.peek_group(&TIER1_OPS) {
             let op = self.eat_group(&TIER1_OPS)?;
             let expr = self.expression()?;
@@ -235,16 +237,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn base_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn base_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
         if let Some(token) = self.peek_group(&TIER0_KINDS) {
             return match token.kind {
                 TokenKind::LParen => Ok(self.parenthesized_expr()?),
                 TokenKind::IntLit => Ok(Expression::IntegerLiteral(self.eat_match(
                     TokenKind::IntLit,
                 ).unwrap())),
-                TokenKind::Ident => Ok(Expression::Identifier(
-                    self.eat_match(TokenKind::Ident).unwrap(),
-                )),
+                TokenKind::Ident => Ok(self.parse_ident()?),
                 _ => Err(self.eat_group(&TIER0_KINDS).unwrap_err()),
             };
         }
@@ -252,7 +252,7 @@ impl<'a> Parser<'a> {
         Err(self.eat_group(&TIER0_KINDS).unwrap_err())
     }
 
-    fn tier_two_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn tier_two_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
         let mut expr = self.unary_expr()?;
 
         if let Some(_) = self.peek_group(&TIER2_OPS) {
@@ -263,7 +263,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn tier_three_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn tier_three_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
         let mut expr = self.tier_two_expr()?;
 
         if let Some(_) = self.peek_group(&TIER3_OPS) {
@@ -274,7 +274,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn tier_four_expr(&mut self) -> Result<Expression<'a>, ParserError<'a>> {
+    fn tier_four_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
         let mut expr = self.tier_three_expr()?;
 
         if let Some(_) = self.peek_group(&TIER4_OPS) {
@@ -285,9 +285,45 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
+    fn parse_ident(&mut self) -> ParseResult<'a, Expression<'a>> {
+        let ident = self.eat_match(TokenKind::Ident)?;
+
+        Ok(if let Some(Ok(tkn)) = self.0.peek().map(|&r| r) {
+            match tkn.kind {
+                TokenKind::LParen => Expression::FnCall(ident, self.parse_fn_call()?),
+                //TokenKind::Period => Expression::
+                _ => Expression::Identifier(ident),
+            }
+        } else {
+            Expression::Identifier(ident)
+        })
+    }
+
+    fn parse_fn_call(&mut self) -> ParseResult<'a, Vec<Expression<'a>>> {
+        self.eat_match(TokenKind::LParen)?;
+
+        let mut exprs = Vec::new();
+
+        while let None = self.peek_match(TokenKind::RParen) {
+            exprs.push(self.expression()?);
+
+            if let None = self.peek_match(TokenKind::Comma) {
+                break;
+            } else {
+                self.eat_match(TokenKind::Comma)?;
+            }
+        }
+
+        self.eat_match(TokenKind::RParen)?;
+
+        Ok(exprs)
+    }
+
+    //fn parse_ident_with_optional_fields(&mut self) ->
+
     /// Consumes the next token, returning it on success when comparing, otherwise
     /// returns a `ParseError`
-    fn eat_match(&mut self, tk: TokenKind) -> Result<Token<'a>, ParserError<'a>> {
+    fn eat_match(&mut self, tk: TokenKind) -> ParseResult<'a, Token<'a>> {
         // Match the next token (returning an error if we're eof).
         let token = match self.0.next() {
             Some(tkn) => tkn,
@@ -303,7 +339,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn eat_group(&mut self, kinds: &'a [TokenKind]) -> Result<Token<'a>, ParserError<'a>> {
+    fn eat_group(&mut self, kinds: &'a [TokenKind]) -> ParseResult<'a, Token<'a>> {
         let token = match self.0.next() {
             Some(tkn) => tkn,
             None => return Err(ParserError::UnexpectedEOF),
@@ -348,7 +384,7 @@ impl<'a> Parser<'a> {
 #[derive(Debug)]
 pub enum ParserError<'a> {
     /// Generic, placeholder error for now.
-    InvalidToken(TokenError),
+    InvalidToken(TokenError<'a>),
     /// Error for finding an unexpected token type.
     // TODO: Add what it expected.
     UnexpectedToken(Token<'a>, TokenKind),
@@ -386,8 +422,8 @@ impl<'a> ::std::fmt::Display for ParserError<'a> {
     }
 }
 
-impl<'a> From<TokenError> for ParserError<'a> {
-    fn from(te: TokenError) -> ParserError<'a> {
+impl<'a> From<TokenError<'a>> for ParserError<'a> {
+    fn from(te: TokenError<'a>) -> ParserError<'a> {
         ParserError::InvalidToken(te)
     }
 }

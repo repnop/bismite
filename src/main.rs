@@ -11,6 +11,7 @@ mod ast;
 mod parser;
 mod token;
 mod token_stream;
+mod visit;
 
 use codespan_reporting::termcolor::StandardStream;
 use codespan_reporting::{emit, ColorArg, Diagnostic, Label, Severity};
@@ -57,8 +58,9 @@ fn main() {
     let ts = token_stream::TokenStream::new(&file_contents).peekable();
 
     let writer = StandardStream::stdout(ColorArg::from_str("auto").unwrap().into());
+    let res = parser::Parser(ts).begin_parse();
 
-    if let Err(e) = parser::Parser(ts).begin_parse() {
+    if let Err(e) = res {
         emit(
             writer.lock(),
             &cm,
@@ -66,9 +68,15 @@ fn main() {
                 match e {
                     parser::ParserError::InvalidToken(e) => e.span(),
                     parser::ParserError::UnexpectedToken(t, _) => t.span,
+                    parser::ParserError::UnexpectedInGroup(t, _) => t.span,
                     _ => panic!("{:?}", e),
                 },
             )),
         ).unwrap();
+    } else if let Ok(ast) = res {
+        use visit::Visitor;
+
+        let mut visitor = visit::SExprVisitor {};
+        visitor.visit_decls(&ast);
     }
 }

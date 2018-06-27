@@ -24,7 +24,7 @@ pub const TIER4_OPS: [TokenKind; 5] = [
 
 /// Token type. Contains the kind of token, and the location within the source
 /// that it exists.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Token<'a> {
     pub kind: TokenKind,
     pub lit: &'a str,
@@ -32,15 +32,15 @@ pub struct Token<'a> {
 }
 
 /// Toke error type.
-#[derive(Debug, Clone)]
-pub enum TokenError {
+#[derive(Debug, Clone, Copy)]
+pub enum TokenError<'a> {
     /// Invalid token and position in source.
-    InvalidToken(String, ByteSpan),
+    InvalidToken(&'a str, ByteSpan),
     /// Invalid (integer) literal.
     InvalidLiteral(ByteSpan),
 }
 
-impl TokenError {
+impl<'a> TokenError<'a> {
     pub fn span(&self) -> ByteSpan {
         use self::TokenError::*;
 
@@ -51,7 +51,7 @@ impl TokenError {
     }
 }
 
-impl ::std::fmt::Display for TokenError {
+impl<'a> ::std::fmt::Display for TokenError<'a> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         use self::TokenError::*;
 

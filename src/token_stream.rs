@@ -44,10 +44,10 @@ impl<'a> TokenStream<'a> {
 
 impl<'a> Iterator for TokenStream<'a> {
     /// Success or failure of the token parse.
-    type Item = Result<Token<'a>, TokenError>;
+    type Item = Result<Token<'a>, TokenError<'a>>;
 
     /// Lexes and returns the next token.
-    fn next(&mut self) -> Option<Result<Token<'a>, TokenError>> {
+    fn next(&mut self) -> Option<Result<Token<'a>, TokenError<'a>>> {
         while let Some((_, c)) = self.0.peek() {
             if c.is_whitespace() {
                 self.0.next().unwrap();
@@ -130,8 +130,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Gt,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -168,8 +168,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Lt,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -194,8 +194,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Not,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -207,8 +207,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::Period,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -244,8 +244,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Minus,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -270,8 +270,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Plus,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -296,8 +296,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Mult,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -332,8 +332,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Div,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -358,8 +358,8 @@ impl<'a> Iterator for TokenStream<'a> {
                         kind: TokenKind::Assign,
                         lit: &str_slice[..1],
                         span: ByteSpan::new(
-                            ByteIndex(pos_start as u32),
                             ByteIndex(pos_start as u32 + 1),
+                            ByteIndex(pos_start as u32 + 2),
                         ),
                     }),
                 }
@@ -371,8 +371,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::LParen,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -383,8 +383,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::RParen,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -395,8 +395,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::LBrace,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -407,8 +407,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::RBrace,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -419,8 +419,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::LBracket,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -431,8 +431,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::RBracket,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -443,8 +443,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::Comma,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -455,8 +455,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::Semicolon,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -467,8 +467,8 @@ impl<'a> Iterator for TokenStream<'a> {
                     kind: TokenKind::Colon,
                     lit: &str_slice[..1],
                     span: ByteSpan::new(
-                        ByteIndex(pos_start as u32),
                         ByteIndex(pos_start as u32 + 1),
+                        ByteIndex(pos_start as u32 + 2),
                     ),
                 })
             }
@@ -479,9 +479,9 @@ impl<'a> Iterator for TokenStream<'a> {
 }
 
 /// Consumes invalid tokens.
-fn eat_invalid<'a>(iter: &mut PeekableCharIndices<'a>, start: u32) -> TokenError {
-    let mut invalid = String::new();
+fn eat_invalid<'a>(iter: &mut PeekableCharIndices<'a>, start: u32) -> TokenError<'a> {
     let mut end_idx = start as usize;
+    let s = iter.as_str();
 
     while let Some((idx, ch)) = iter.peek() {
         if ch.is_whitespace() {
@@ -490,13 +490,12 @@ fn eat_invalid<'a>(iter: &mut PeekableCharIndices<'a>, start: u32) -> TokenError
         } else {
             let (ei, ch) = iter.next().unwrap();
             end_idx = ei + 1;
-            invalid.push(ch);
         }
     }
 
     TokenError::InvalidToken(
-        invalid,
-        ByteSpan::new(ByteIndex(start), ByteIndex(end_idx as u32 + 1)),
+        &s[0..(end_idx - start as usize - 1)],
+        ByteSpan::new(ByteIndex(start + 1), ByteIndex(end_idx as u32 + 1)),
     )
 }
 

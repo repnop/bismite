@@ -1,7 +1,7 @@
 struct Test {
     myfield: type1,
     myotherfield: type2,
-    badfield: type,
+    badfield: type3,
 }
 
 fn myfn(arg1: Test) -> returntype {
@@ -11,6 +11,7 @@ fn myfn(arg1: Test) -> returntype {
     let multtest = 10 + 5 * -2;
     let multtest2 = (10 + 5) * -2;
     let tier4 = ((1 > 2) < 3) != 5;
+    ##%%%%
 }
 
 fn myfn2() {

@@ -2,8 +2,8 @@ use token::*;
 
 #[derive(Debug)]
 pub struct Decls<'a> {
-    structs: Vec<StructDecl<'a>>,
-    fns: Vec<FnDecl<'a>>,
+    pub structs: Vec<StructDecl<'a>>,
+    pub fns: Vec<FnDecl<'a>>,
 }
 
 impl<'a> Decls<'a> {
@@ -59,11 +59,14 @@ pub struct VarDecl<'a> {
     pub span: ByteSpan,
 }
 
+// TODO:
+
 #[derive(Debug, Clone)]
 pub enum Expression<'a> {
     IntegerLiteral(Token<'a>),
     Identifier(Token<'a>),
     Unary(Token<'a>, Box<Expression<'a>>),
     Binary(Box<Expression<'a>>, Token<'a>, Box<Expression<'a>>),
-    Other,
+    FnCall(Token<'a>, Vec<Expression<'a>>),
+    //MemberAccess(Box<Expression<'a>>, Box<Expression<'a>>),
 }
