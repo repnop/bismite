@@ -227,7 +227,7 @@ impl<'a> Parser<'a> {
     }
 
     fn unary_expr(&mut self) -> ParseResult<'a, Expression<'a>> {
-        if let Some(op) = self.peek_group(&TIER1_OPS) {
+        if let Some(_) = self.peek_group(&TIER1_OPS) {
             let op = self.eat_group(&TIER1_OPS)?;
             let expr = self.expression()?;
 
@@ -241,9 +241,18 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.peek_group(&TIER0_KINDS) {
             return match token.kind {
                 TokenKind::LParen => Ok(self.parenthesized_expr()?),
-                TokenKind::IntLit => Ok(Expression::IntegerLiteral(self.eat_match(
-                    TokenKind::IntLit,
-                ).unwrap())),
+                TokenKind::IntLit => Ok({
+                    let tkn = self.eat_match(TokenKind::IntLit).unwrap();
+                    Expression {
+                        ty: Type { span: tkn.span, kind },
+                        kind: ExpressionKind::Literal(Literal {
+                            token: tkn,
+                            kind: LiteralKind::Integer(u128::from_str_radix(tkn.lit, 10).map_err(
+                                |_| ParserError::InvalidToken(TokenError::InvalidLiteral(tkn.span)),
+                            )?),
+                        }),
+                    }
+                }),
                 TokenKind::Ident => Ok(self.parse_ident()?),
                 _ => Err(self.eat_group(&TIER0_KINDS).unwrap_err()),
             };
@@ -413,7 +422,7 @@ impl<'a> ::std::fmt::Display for ParserError<'a> {
                     tkn.kind.name()
                 )?;
                 for kind in kinds.iter() {
-                    write!(f, "{}, ", kind.name());
+                    write!(f, "{}, ", kind.name())?;
                 }
                 Ok(())
             }

@@ -58,7 +58,7 @@ impl<'a> Iterator for TokenStream<'a> {
 
         let (pos_start, ch) = self.0.peek()?;
 
-        let mut pos_end = pos_start as u32;
+        let pos_end;
         let mut str_slice = self.0.as_str();
 
         //pos_start += 1;
@@ -488,7 +488,7 @@ fn eat_invalid<'a>(iter: &mut PeekableCharIndices<'a>, start: u32) -> TokenError
             end_idx = idx + 1;
             break;
         } else {
-            let (ei, ch) = iter.next().unwrap();
+            let (ei, _) = iter.next().unwrap();
             end_idx = ei + 1;
         }
     }

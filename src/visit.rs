@@ -75,9 +75,12 @@ impl Visitor for SExprVisitor {
         print!("(var ");
         self.visit_name(&v.ident);
 
+        print!(" ");
+
         if let Some(ident) = &v.var_type {
-            print!(" ");
             self.visit_name(ident);
+        } else {
+            print!("<inferred>");
         }
 
         self.visit_expr(&v.value);
@@ -85,10 +88,10 @@ impl Visitor for SExprVisitor {
     }
 
     fn visit_expr(&mut self, e: &Expression) {
-        use ast::Expression::*;
+        use ast::ExpressionKind::*;
 
         print!("(expr ");
-        match e {
+        match &e.kind {
             IntegerLiteral(i) => self.visit_name(i),
             Identifier(i) => self.visit_name(i),
             Unary(op, expr) => {
@@ -111,15 +114,3 @@ impl Visitor for SExprVisitor {
         print!(")");
     }
 }
-
-/*
-#[derive(Debug, Clone)]
-pub enum Expression<'a> {
-    IntegerLiteral(Token<'a>),
-    Identifier(Token<'a>),
-    Unary(Token<'a>, Box<Expression<'a>>),
-    Binary(Box<Expression<'a>>, Token<'a>, Box<Expression<'a>>),
-    FnCall(Token<'a>, Vec<Expression<'a>>),
-    MemberAccess(Box<Expression<'a>>, Box<Expression<'a>>),
-}
-*/
