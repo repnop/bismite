@@ -76,10 +76,13 @@ impl Visitor for SExprVisitor {
 
         print!(" ");
 
-        if let Some(ident) = &v.var_type {
-            self.visit_name(ident);
-        } else {
-            print!("<inferred>");
+        match &v.var_type {
+            Some(ty) => match ty.kind {
+                TypeKind::Infer => print!("<inferred>"),
+                TypeKind::Named(s) => print!("{}", s),
+                TypeKind::Literal(_) => {}
+            },
+            None => {}
         }
 
         self.visit_expr(&v.value);
@@ -91,7 +94,7 @@ impl Visitor for SExprVisitor {
 
         print!("(expr ");
         match &e.kind {
-            IntegerLiteral(i) => self.visit_name(i),
+            Literal(i) => self.visit_name(&i.token),
             Identifier(i) => self.visit_name(i),
             Unary(op, expr) => {
                 self.visit_name(op);
