@@ -1,5 +1,4 @@
-use ast::*;
-use token::*;
+use crate::{ast::*, token::*};
 
 pub trait Visitor {
     fn visit_decls(&mut self, d: &Decls) {
@@ -88,7 +87,7 @@ impl Visitor for SExprVisitor {
     }
 
     fn visit_expr(&mut self, e: &Expression) {
-        use ast::ExpressionKind::*;
+        use crate::ast::ExpressionKind::*;
 
         print!("(expr ");
         match &e.kind {

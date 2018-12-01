@@ -1,4 +1,4 @@
-use token::*;
+use crate::token::*;
 
 #[derive(Debug)]
 pub struct Decls<'a> {

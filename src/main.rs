@@ -1,26 +1,14 @@
-extern crate codespan;
-extern crate codespan_reporting;
-extern crate isomorphism;
-#[macro_use]
-extern crate lazy_static;
-extern crate structopt;
-#[macro_use]
-extern crate structopt_derive;
-
 mod ast;
 mod parser;
 mod token;
 mod token_stream;
 mod visit;
 
-use codespan_reporting::termcolor::StandardStream;
-use codespan_reporting::{emit, ColorArg, Diagnostic, Label, Severity};
-
-use structopt::StructOpt;
-
+use codespan_reporting::{emit, termcolor::StandardStream, ColorArg, Diagnostic, Label, Severity};
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
+use structopt::StructOpt;
 
 macro_rules! err {
     ($e:expr) => {{
@@ -72,9 +60,10 @@ fn main() {
                     _ => panic!("{:?}", e),
                 },
             )),
-        ).unwrap();
+        )
+        .unwrap();
     } else if let Ok(ast) = res {
-        use visit::Visitor;
+        use crate::visit::Visitor;
 
         let mut visitor = visit::SExprVisitor {};
         visitor.visit_decls(&ast);

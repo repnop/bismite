@@ -1,9 +1,5 @@
+use crate::{ast::*, token::*};
 use std::iter::Peekable;
-
-use ast::*;
-
-use token::*;
-use token_stream::*;
 
 type ParseResult<'a, T> = Result<T, ParserError<'a>>;
 

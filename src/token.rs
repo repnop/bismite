@@ -1,4 +1,6 @@
-pub use codespan::ByteSpan;
+pub use codespan::{ByteIndex, ByteSpan};
+use lazy_static::lazy_static;
+use logos::Logos;
 use std::collections::HashMap;
 
 pub const TIER0_KINDS: [TokenKind; 3] = [TokenKind::LParen, TokenKind::Ident, TokenKind::IntLit];
@@ -29,6 +31,16 @@ pub struct Token<'a> {
     pub kind: TokenKind,
     pub lit: &'a str,
     pub span: ByteSpan,
+}
+
+impl<'a> Token<'a> {
+    pub fn new(kind: TokenKind, lit: &'a str, span: std::ops::Range<usize>) -> Token<'a> {
+        Self {
+            kind,
+            lit,
+            span: ByteSpan::new(ByteIndex(span.start as u32), ByteIndex(span.end as u32)),
+        }
+    }
 }
 
 /// Toke error type.
@@ -63,99 +75,140 @@ impl<'a> ::std::fmt::Display for TokenError<'a> {
 }
 
 /// The type of token.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Logos, Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
+    #[end]
+    Eof,
+    #[error]
+    Error,
     /// Integer literals.
+    #[regex = "(-|\\+)?[0-9]+"]
     IntLit,
     /// Identifiers.
+    #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
     Ident,
     /// `(`
+    #[token = "("]
     LParen,
     /// `)`
+    #[token = ")"]
     RParen,
     /// `{`
+    #[token = "{"]
     LBrace,
     /// `}`
+    #[token = "}"]
     RBrace,
     /// `[`
+    #[token = "["]
     LBracket,
     /// `]`
+    #[token = "]"]
     RBracket,
     /// `,`
+    #[token = ","]
     Comma,
     /// `.`
+    #[token = "."]
     Period,
     /// `;`
+    #[token = ";"]
     Semicolon,
     /// `:`
+    #[token = ":"]
     Colon,
     /// `->`
+    #[token = "->"]
     Arrow,
     /// `let`
+    #[token = "let"]
     Let,
     /// `fn`
+    #[token = "fn"]
     Fn,
     /// `if`
+    #[token = "if"]
     If,
     /// `while`
+    #[token = "while"]
     While,
     /// `for`
+    #[token = "for"]
     For,
     /// `struct`
+    #[token = "struct"]
     Struct,
     /// Addition.
     /// `+`
+    #[token = "+"]
     Plus,
     /// Addition and assignment.
     /// `+=`
+    #[token = "+="]
     PlusEq,
     /// Subtraction.
     /// `-`
+    #[token = "-"]
     Minus,
     /// Subtraction and assignment.
     /// `-=`
+    #[token = "-="]
     MinusEq,
     /// Multiplication.
     /// `*`
+    #[token = "*"]
     Mult,
     /// Multiplication and assignment.
     /// `*=`
+    #[token = "*="]
     MultEq,
     /// Division.
     /// `/`
+    #[token = "/"]
     Div,
     /// Division and assignment.
     /// `/=`
+    #[token = "/="]
     DivEq,
     /// Right bitshift.
     /// `>>`
+    #[token = ">>"]
     RShift,
     /// Left bitshift.
     /// `<<`
+    #[token = "<<"]
     LShift,
     /// Negation.
     /// `!`
+    #[token = "!"]
     Not,
     /// Assign.
     /// `=`
+    #[token = "="]
     Assign,
     /// Equals to.
     /// `==`
+    #[token = "=="]
     EqTo,
     /// Less than.
     /// `<`
+    #[token = "<"]
     Lt,
     /// Greater than.
     /// `>`
+    #[token = ">"]
     Gt,
     /// Less than or equal to.
     /// `<=`
+    #[token = "<="]
     LtEq,
     /// Greater than or equal to.
     /// `>=`
+    #[token = ">="]
     GtEq,
     /// Not equal to.
     /// `!=`
+    #[token = "!="]
     NotEq,
 }
 
