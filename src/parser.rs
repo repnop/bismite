@@ -244,7 +244,10 @@ impl<'a> Parser<'a> {
                 TokenKind::IntLit => Ok({
                     let tkn = self.eat_match(TokenKind::IntLit).unwrap();
                     Expression {
-                        ty: Type { span: tkn.span, kind },
+                        ty: Type {
+                            span: tkn.span,
+                            kind,
+                        },
                         kind: ExpressionKind::Literal(Literal {
                             token: tkn,
                             kind: LiteralKind::Integer(u128::from_str_radix(tkn.lit, 10).map_err(

@@ -659,7 +659,8 @@ fn eat_number<'a>(iter: &mut PeekableCharIndices<'a>) -> Result<u32, u32> {
 
     while let Some((_, c)) = iter.peek() {
         if c.is_whitespace()
-            || (!c.is_digit(radix as u32) && DIGIT_VALUES[c as u8 as usize] == None
+            || (!c.is_digit(radix as u32)
+                && DIGIT_VALUES[c as u8 as usize] == None
                 && !c.is_alphabetic())
         {
             break;
