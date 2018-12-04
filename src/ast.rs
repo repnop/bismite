@@ -1,49 +1,41 @@
-use crate::token::*;
+use crate::{parser::GLOBAL_INTERNER, token::*};
+use string_interner::Sym;
 
 #[derive(Debug)]
-pub struct Decls<'a> {
-    pub structs: Vec<StructDecl<'a>>,
-    pub fns: Vec<FnDecl<'a>>,
-}
-
-impl<'a> Decls<'a> {
-    pub fn new() -> Decls<'a> {
-        Decls {
-            structs: Vec::new(),
-            fns: Vec::new(),
-        }
-    }
-
-    pub fn push_struct(&mut self, s: StructDecl<'a>) {
-        self.structs.push(s);
-    }
-
-    pub fn push_fn(&mut self, s: FnDecl<'a>) {
-        self.fns.push(s);
-    }
+pub enum Decls<'a> {
+    Struct(StructDecl),
+    Fn(FnDecl<'a>),
+    Const(ConstDecl<'a>),
 }
 
 #[derive(Debug)]
-pub struct StructDecl<'a> {
-    pub ident: Token<'a>,
-    pub fields: Vec<FieldDecl<'a>>,
+pub struct StructDecl {
+    pub ident: Ident,
+    pub fields: Vec<FieldDecl>,
     pub span: ByteSpan,
 }
 
 #[derive(Debug)]
-pub struct FieldDecl<'a> {
-    pub ident: Token<'a>,
-    pub field_type: Token<'a>,
+pub struct FieldDecl {
+    pub ident: Ident,
+    pub field_type: Type,
     pub span: ByteSpan,
 }
 
 #[derive(Debug)]
 pub struct FnDecl<'a> {
-    pub ident: Token<'a>,
-    pub arguments: Vec<FieldDecl<'a>>,
-    pub return_type: Option<Token<'a>>,
+    pub ident: Ident,
+    pub arguments: Vec<FieldDecl>,
+    pub return_type: Option<Type>,
     pub statements: Vec<StatementDecl<'a>>,
     pub span: ByteSpan,
+}
+
+#[derive(Debug)]
+pub struct ConstDecl<'a> {
+    pub ident: Ident,
+    pub ty: Type,
+    pub value: Literal<'a>,
 }
 
 #[derive(Debug)]
@@ -53,17 +45,23 @@ pub enum StatementDecl<'a> {
 
 #[derive(Debug)]
 pub struct VarDecl<'a> {
-    pub ident: Token<'a>,
-    pub var_type: Option<Type<'a>>,
+    pub ident: Ident,
+    pub var_type: Option<Type>,
     pub value: Expression<'a>,
     pub span: ByteSpan,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Ident {
+    pub span: ByteSpan,
+    pub id: Sym,
 }
 
 // TODO:
 #[derive(Debug, Clone)]
 pub struct Expression<'a> {
     pub kind: ExpressionKind<'a>,
-    pub ty: Type<'a>,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -89,14 +87,26 @@ pub enum LiteralKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct Type<'a> {
+pub struct Type {
     pub span: ByteSpan,
-    pub kind: TypeKind<'a>,
+    pub kind: TypeKind,
 }
 
 #[derive(Debug, Clone)]
-pub enum TypeKind<'a> {
+pub enum TypeKind {
     Infer,
-    Named(&'a str),
-    Literal(Literal<'a>),
+    Path(Path),
+    Array(Box<Type>, usize),
+    Literal(LiteralKind),
+}
+
+#[derive(Debug, Clone)]
+pub struct Path {
+    pub span: ByteSpan,
+    pub segments: Vec<PathSegment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PathSegment {
+    pub ident: Ident,
 }

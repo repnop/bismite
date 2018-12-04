@@ -1,15 +1,16 @@
 use crate::{ast::*, token::*};
 
 pub trait Visitor {
-    fn visit_decls(&mut self, d: &Decls) {
+    fn visit_decls(&mut self, d: &[Decls]) {
         print!("(");
-        for s in &d.structs {
-            self.visit_struct(s);
+        for decl in d {
+            match decl {
+                Decls::Struct(s) => self.visit_struct(s),
+                Decls::Fn(f) => self.visit_fn(f),
+                Decls::Const(c) => self.visit_const(c),
+            }
         }
 
-        for f in &d.fns {
-            self.visit_fn(f);
-        }
         println!(")");
     }
 
@@ -20,6 +21,8 @@ pub trait Visitor {
     fn visit_statement(&mut self, s: &StatementDecl);
     fn visit_var(&mut self, v: &VarDecl);
     fn visit_expr(&mut self, e: &Expression);
+    fn visit_const(&mut self, c: &ConstDecl);
+    fn visit_ty(&mut self, ty: &Type);
 }
 
 pub struct SExprVisitor;
@@ -76,17 +79,20 @@ impl Visitor for SExprVisitor {
 
         print!(" ");
 
-        match &v.var_type {
-            Some(ty) => match ty.kind {
-                TypeKind::Infer => print!("<inferred>"),
-                TypeKind::Named(s) => print!("{}", s),
-                TypeKind::Literal(_) => {}
-            },
-            None => {}
+        if let Some(ty) = &v.var_type {
+            self.visit_ty(ty);
         }
 
         self.visit_expr(&v.value);
         print!(")");
+    }
+
+    fn visit_ty(&mut self, ty: &Type) {
+        match ty.kind {
+            TypeKind::Infer => print!("<inferred>"),
+            // TypeKind::Named(s) => print!("{}", s),
+            TypeKind::Literal(_) => {}
+        }
     }
 
     fn visit_expr(&mut self, e: &Expression) {
@@ -113,6 +119,13 @@ impl Visitor for SExprVisitor {
                 }
             }
         };
+        print!(")");
+    }
+
+    fn visit_const(&mut self, c: &ConstDecl) {
+        print!("(const ");
+        self.visit_name(&c.ident);
+        self.visit_ty(&c.ty);
         print!(")");
     }
 }

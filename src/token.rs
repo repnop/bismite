@@ -62,7 +62,7 @@ pub enum TokenKind {
     Error,
     /// Integer literals.
     #[regex = "(-|\\+)?[0-9]+"]
-    IntLit,
+    DecLit,
     #[regex = "0x[A-Fa-f0-9]+"]
     HexLit,
     #[regex = "0o[0-7]+"]
@@ -106,6 +106,9 @@ pub enum TokenKind {
     /// `:`
     #[token = ":"]
     Colon,
+    /// `::`
+    #[token = "::"]
+    PathSeparator,
     /// `->`
     #[token = "->"]
     Arrow,
@@ -208,7 +211,7 @@ impl TokenKind {
         match self {
             Eof => "unexpected eof",
             Error => "unexpected error",
-            HexLit | OctLit | BinLit | IntLit => "numeric literal",
+            HexLit | OctLit | BinLit | DecLit => "numeric literal",
             FloatLit => "floating point literal",
             Ident => "identifier",
             LParen => "symbol `(`",
@@ -221,6 +224,7 @@ impl TokenKind {
             Period => "symbol `.`",
             Semicolon => "symbol `;`",
             Colon => "symbol `:`",
+            PathSeparator => "symbol `::`",
             Arrow => "symbol `->`",
             Let => "keyword `let`",
             Fn => "keyword `fn`",
@@ -298,7 +302,7 @@ mod tests {
         assert_and_advance!(TokenKind::HexLit);
         assert_and_advance!(TokenKind::BinLit);
         assert_and_advance!(TokenKind::OctLit);
-        assert_and_advance!(TokenKind::IntLit);
+        assert_and_advance!(TokenKind::DecLit);
         assert_and_advance!(TokenKind::FloatLit);
         assert_and_advance!(TokenKind::FloatLit);
         assert_and_advance!(TokenKind::FloatLit);
