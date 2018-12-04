@@ -1,7 +1,3 @@
 struct fucc {
     yeah: boi,
 }
-
-fn myfn(potate: usize) -> thing {
-    asdf
-}

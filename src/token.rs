@@ -63,6 +63,16 @@ pub enum TokenKind {
     /// Integer literals.
     #[regex = "(-|\\+)?[0-9]+"]
     IntLit,
+    #[regex = "0x[A-Fa-f0-9]+"]
+    HexLit,
+    #[regex = "0o[0-7]+"]
+    OctLit,
+    #[regex = "0b[0-1]+"]
+    BinLit,
+
+    /// Float literals.
+    #[regex = "(-|\\+)?[0-9]+(\\.[0-9]+|e[0-9]+)"]
+    FloatLit,
     /// Identifiers.
     #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
     Ident,
@@ -198,7 +208,8 @@ impl TokenKind {
         match self {
             Eof => "unexpected eof",
             Error => "unexpected error",
-            IntLit => "integer literal",
+            HexLit | OctLit | BinLit | IntLit => "numeric literal",
+            FloatLit => "floating point literal",
             Ident => "identifier",
             LParen => "symbol `(`",
             RParen => "symbol `)`",
@@ -264,4 +275,33 @@ pub enum Comment {
     /// Multi-line comment style.
     /// `/* comment */`
     Multi,
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn num_literals() {
+        use super::TokenKind;
+        use logos::Logos;
+
+        let mut lexer = TokenKind::lexer(
+            "0xABCDEFabcdef0123456789 0b10101010 0o012345671 1234 1.0 -1.2 1e10 +0.253",
+        );
+
+        macro_rules! assert_and_advance {
+            ($($t:tt)+) => {
+                assert_eq!(lexer.token, $($t)+);
+                lexer.advance();
+            };
+        }
+
+        assert_and_advance!(TokenKind::HexLit);
+        assert_and_advance!(TokenKind::BinLit);
+        assert_and_advance!(TokenKind::OctLit);
+        assert_and_advance!(TokenKind::IntLit);
+        assert_and_advance!(TokenKind::FloatLit);
+        assert_and_advance!(TokenKind::FloatLit);
+        assert_and_advance!(TokenKind::FloatLit);
+        assert_and_advance!(TokenKind::FloatLit);
+    }
 }

@@ -41,4 +41,7 @@ fn main() {
         codespan::FileName::Real(options.input.to_path_buf()),
         file_contents.clone(),
     );
+
+    use crate::visit::Visitor;
+    crate::visit::SExprVisitor.visit_decls(&parser::Parser::new(&file_contents).parse().unwrap());
 }
