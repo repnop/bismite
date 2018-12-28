@@ -54,7 +54,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         Ok(decls)
     }
 
-    fn parse_struct(&'parser mut self) -> ParseResult<'source, ast::StructDecl<'source>> {
+    fn parse_struct(&'parser mut self) -> ParseResult<'source, ast::StructDecl> {
         let span_begin = self.eat(TokenKind::Struct)?.span;
         let ident = self.parse_ident()?;
 
@@ -81,7 +81,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         })
     }
 
-    fn parse_fields(&'parser mut self) -> ParseResult<'source, Vec<ast::FieldDecl<'source>>> {
+    fn parse_fields(&'parser mut self) -> ParseResult<'source, Vec<ast::FieldDecl>> {
         let mut fields = Vec::new();
 
         loop {
@@ -91,7 +91,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                 TokenKind::Ident => {
                     let ident = self.parse_ident()?;
                     self.eat(TokenKind::Colon)?;
-                    let field_type = self.parse_ident()?;
+                    let field_type = self.parse_type()?;
 
                     if let TokenKind::Comma = self.peek()?.kind {
                         self.eat(TokenKind::Comma)?;
@@ -129,13 +129,13 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             TokenKind::Ident | TokenKind::PathSeparator => {
                 let path = self.parse_path()?;
 
-                Ok(ast::TypeKind::Path(path))
+                ast::TypeKind::Path(path)
             }
             TokenKind::LBracket => {
                 self.eat(TokenKind::LBracket)?;
                 let ty = self.parse_type()?;
                 self.eat(TokenKind::Semicolon)?;
-
+                self.parse_array()?
             }
             _ => return Err(peek),
         };
@@ -175,11 +175,28 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         })
     }
 
-    fn parse_number<T: std::str::FromStr>(&'parser mut self) -> ParseResult<'source, T> {
+    fn parse_literal(&'parser mut self) -> ParseResult<'source, ast::LiteralKind> {
+        use std::str::FromStr;
+
         match self.peek()?.kind {
-            TokenKind::DecLit => 
-                Ok(self.eat(TokenKind::DecLit)?.lit.parse::<T>().unwrap())
-            TokenKind::HexLit => Ok(self.eat(TokenKind::DecLit)?.lit.parse::<T>().unwrap())
+            TokenKind::DecLit => Ok(ast::LiteralKind::Int(
+                i128::from_str_radix(self.eat(TokenKind::DecLit)?.lit, 10).unwrap(),
+            )),
+            TokenKind::HexLit => Ok(ast::LiteralKind::Int(
+                i128::from_str_radix(&self.eat(TokenKind::HexLit)?.lit[2..], 16).unwrap(),
+            )),
+            TokenKind::OctLit => Ok(ast::LiteralKind::Int(
+                i128::from_str_radix(&self.eat(TokenKind::OctLit)?.lit[2..], 8).unwrap(),
+            )),
+            TokenKind::BinLit => Ok(ast::LiteralKind::Int(
+                i128::from_str_radix(&self.eat(TokenKind::BinLit)?.lit[2..], 2).unwrap(),
+            )),
+            TokenKind::FloatLit => Ok(ast::LiteralKind::Float(
+                f64::from_str(self.eat(TokenKind::BinLit)?.lit).unwrap(),
+            )),
+            TokenKind::FloatLit => Ok(ast::LiteralKind::Float(
+                f64::from_str(self.eat(TokenKind::BinLit)?.lit).unwrap(),
+            )),
         }
     }
 
@@ -231,7 +248,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
     }
 
     fn peek_n(&'parser mut self, n: usize) -> ParseResult<'source, Token<'source>> {
-        let mut tokens = VecDeque::new();
+        self.token_queue.clear();
 
         let loop_len = if n >= self.token_queue.len() {
             n - self.token_queue.len()
@@ -240,10 +257,9 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         };
 
         for _ in 0..loop_len {
-            tokens.push_back(self.next()?);
+            self.token_queue.push_back(self.next()?);
         }
 
-        self.token_queue.extend(tokens);
         Ok(*self.token_queue.back().unwrap())
     }
 

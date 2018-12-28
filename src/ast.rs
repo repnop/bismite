@@ -82,8 +82,9 @@ pub struct Literal<'a> {
 
 #[derive(Debug, Clone)]
 pub enum LiteralKind {
-    Integer(u128),
-    //String(String),
+    Int(i128),
+    Float(f64),
+    RawStr(Sym),
 }
 
 #[derive(Debug, Clone)]

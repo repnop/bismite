@@ -73,6 +73,10 @@ pub enum TokenKind {
     /// Float literals.
     #[regex = "(-|\\+)?[0-9]+(\\.[0-9]+|e[0-9]+)"]
     FloatLit,
+
+    /// String literal.
+    #[regex = "\"([^\"]|\\\")*\""]
+    RawStr,
     /// Identifiers.
     #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
     Ident,
