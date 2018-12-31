@@ -14,7 +14,7 @@ pub trait Visitor {
         println!(")");
     }
 
-    fn visit_name(&mut self, t: &Token);
+    fn visit_name(&mut self, t: &Ident);
     fn visit_struct(&mut self, s: &StructDecl);
     fn visit_fn(&mut self, f: &FnDecl);
     fn visit_field(&mut self, f: &FieldDecl);
@@ -28,8 +28,8 @@ pub trait Visitor {
 pub struct SExprVisitor;
 
 impl Visitor for SExprVisitor {
-    fn visit_name(&mut self, t: &Token) {
-        print!("{}", t.lit);
+    fn visit_name(&mut self, t: &Ident) {
+        print!("{}", crate::parser::GLOBAL_INTERNER.lock().unwrap().resolve(t.id).unwrap());
     }
 
     fn visit_struct(&mut self, s: &StructDecl) {
