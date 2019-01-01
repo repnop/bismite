@@ -18,7 +18,7 @@ pub struct Parser<'source> {
     token_queue: VecDeque<Token<'source>>,
 }
 
-type ParseResult<'a, T> = Result<T, Token<'a>>;
+type ParseResult<'a, T> = Result<T, ParserError<'a>>;
 
 impl<'parser, 'source: 'parser> Parser<'source> {
     pub fn new(input: &'source str) -> Parser<'source> {
@@ -28,16 +28,19 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         }
     }
 
-    pub fn parse(&'parser mut self) -> ParseResult<'source, Vec<ast::Decls<'source>>> {
+    pub fn parse(&'parser mut self) -> ParseResult<'source, Vec<ast::Decls>> {
         let mut decls = Vec::new();
 
         loop {
             let peek = self.peek();
 
-            if let Err(Token {
-                kind: TokenKind::Eof,
-                ..
-            }) = peek
+            if let Err(ParserError::InvalidToken(
+                Token {
+                    kind: TokenKind::Eof,
+                    ..
+                },
+                _,
+            )) = peek
             {
                 break;
             }
@@ -47,7 +50,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             match peek.kind {
                 TokenKind::Struct => decls.push(ast::Decls::Struct(self.parse_struct()?)),
                 // TokenKind::Fn => decls.push_fn(self.parse_fn()?),
-                _ => return Err(peek),
+                _ => Err(peek)?,
             }
         }
 
@@ -69,7 +72,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             } => {
                 fields = self.parse_fields()?;
             }
-            tkn => return Err(tkn),
+            tkn => Err(tkn)?,
         }
 
         let end_span = self.eat(TokenKind::RBrace)?.span;
@@ -131,19 +134,27 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
                 ast::TypeKind::Path(path)
             }
-            TokenKind::LBracket => {
-                self.eat(TokenKind::LBracket)?;
-                let ty = self.parse_type()?;
-                self.eat(TokenKind::Semicolon)?;
-                self.parse_array()?
-            }
-            _ => return Err(peek),
+            TokenKind::LBracket => self.parse_array()?,
+            _ => Err(peek)?,
         };
 
         Ok(ast::Type {
             span: ByteSpan::new(peek.span.start(), self.peek()?.span.end()),
             kind,
         })
+    }
+
+    fn parse_array(&'parser mut self) -> ParseResult<'source, ast::TypeKind> {
+        self.eat(TokenKind::LBracket)?;
+        let ty = self.parse_type()?;
+        self.eat(TokenKind::Semicolon)?;
+        let len = self.parse_integer_literal()?;
+
+        if len.is_negative() {
+            Err(ParserError::InvalidArraySize(len))?;
+        }
+
+        Ok(ast::TypeKind::Array(Box::new(ty), len as usize))
     }
 
     fn parse_path(&'parser mut self) -> ParseResult<'source, ast::Path> {
@@ -173,6 +184,15 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             span: ByteSpan::new(span_start, span_end),
             segments,
         })
+    }
+
+    fn parse_integer_literal(&'parser mut self) -> ParseResult<'source, i128> {
+        let lit = self.parse_literal()?;
+
+        match lit {
+            ast::LiteralKind::Int(val) => Ok(val),
+            _ => Err(ParserError::ExpectedIntegerLit(lit)),
+        }
     }
 
     fn parse_literal(&'parser mut self) -> ParseResult<'source, ast::LiteralKind> {
@@ -206,8 +226,23 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         if tkn.kind == expected {
             Ok(tkn)
         } else {
-            Err(tkn)
+            Err(tkn)?
         }
+    }
+
+    fn eat_one_of(
+        &'parser mut self,
+        expecteds: &[TokenKind],
+    ) -> ParseResult<'source, Token<'source>> {
+        let tkn = self.next()?;
+
+        for &kind in expecteds {
+            if tkn.kind == kind {
+                return Ok(tkn);
+            }
+        }
+
+        Err(tkn)?
     }
 
     fn eat_optional(
@@ -228,7 +263,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             let tkn = Token::new(self.lexer.token, self.lexer.slice(), self.lexer.range());
 
             let ret = match &tkn.kind {
-                TokenKind::Error | TokenKind::Eof => Err(tkn),
+                TokenKind::Error | TokenKind::Eof => Err(tkn)?,
                 _ => Ok(tkn),
             };
 
@@ -242,7 +277,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                     TokenKind::Eof,
                     self.lexer.slice(),
                     self.lexer.range(),
-                )),
+                ))?,
             }
         }
     }
@@ -274,9 +309,19 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
 /// Represents a parser error.
 #[derive(Debug)]
-pub enum ParserError {}
+pub enum ParserError<'src> {
+    ExpectedIntegerLit(ast::LiteralKind),
+    InvalidToken(Token<'src>, Option<TokenKind>),
+    InvalidArraySize(i128),
+}
 
-impl ::std::fmt::Display for ParserError {
+impl<'src> From<Token<'src>> for ParserError<'src> {
+    fn from(token: Token<'src>) -> ParserError<'src> {
+        ParserError::InvalidToken(token, None)
+    }
+}
+
+impl<'src> ::std::fmt::Display for ParserError<'src> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         Ok(())
     }

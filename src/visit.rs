@@ -29,11 +29,20 @@ pub struct SExprVisitor;
 
 impl Visitor for SExprVisitor {
     fn visit_name(&mut self, t: &Ident) {
-        print!("{}", crate::parser::GLOBAL_INTERNER.lock().unwrap().resolve(t.id).unwrap());
+        print!(
+            "{}",
+            crate::parser::GLOBAL_INTERNER
+                .read()
+                .unwrap()
+                .resolve(t.id)
+                .unwrap()
+        );
     }
 
     fn visit_struct(&mut self, s: &StructDecl) {
-        print!("(struct {} ", s.ident.lit);
+        print!("(struct ");
+        self.visit_name(&s.ident);
+        print!(" ");
 
         for field in &s.fields {
             self.visit_field(field);

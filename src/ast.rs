@@ -2,10 +2,10 @@ use crate::{parser::GLOBAL_INTERNER, token::*};
 use string_interner::Sym;
 
 #[derive(Debug)]
-pub enum Decls<'a> {
+pub enum Decls {
     Struct(StructDecl),
-    Fn(FnDecl<'a>),
-    Const(ConstDecl<'a>),
+    Fn(FnDecl),
+    Const(ConstDecl),
 }
 
 #[derive(Debug)]
@@ -23,31 +23,31 @@ pub struct FieldDecl {
 }
 
 #[derive(Debug)]
-pub struct FnDecl<'a> {
+pub struct FnDecl {
     pub ident: Ident,
     pub arguments: Vec<FieldDecl>,
     pub return_type: Option<Type>,
-    pub statements: Vec<StatementDecl<'a>>,
+    pub statements: Vec<StatementDecl>,
     pub span: ByteSpan,
 }
 
 #[derive(Debug)]
-pub struct ConstDecl<'a> {
+pub struct ConstDecl {
     pub ident: Ident,
     pub ty: Type,
-    pub value: Literal<'a>,
+    pub value: Literal,
 }
 
 #[derive(Debug)]
-pub enum StatementDecl<'a> {
-    VarDecl(VarDecl<'a>),
+pub enum StatementDecl {
+    VarDecl(VarDecl),
 }
 
 #[derive(Debug)]
-pub struct VarDecl<'a> {
+pub struct VarDecl {
     pub ident: Ident,
     pub var_type: Option<Type>,
-    pub value: Expression<'a>,
+    pub value: Expression,
     pub span: ByteSpan,
 }
 
@@ -59,24 +59,43 @@ pub struct Ident {
 
 // TODO:
 #[derive(Debug, Clone)]
-pub struct Expression<'a> {
-    pub kind: ExpressionKind<'a>,
-    pub ty: Type,
+pub struct Expression {
+    pub kind: ExpressionKind,
+    pub span: ByteSpan,
 }
 
 #[derive(Debug, Clone)]
-pub enum ExpressionKind<'a> {
-    Literal(Literal<'a>),
-    Identifier(Token<'a>),
-    Unary(Token<'a>, Box<Expression<'a>>),
-    Binary(Box<Expression<'a>>, Token<'a>, Box<Expression<'a>>),
-    FnCall(Token<'a>, Vec<Expression<'a>>),
-    //MemberAccess(Box<Expression<'a>>, Box<Expression<'a>>),
+pub enum ExpressionKind {
+    Literal(Literal),
+    Path(Path),
+    Unary(UnaryOp, Box<Expression>),
+    Binary(Box<Expression>, BinaryOp, Box<Expression>),
+    FnCall(Box<Expression>, Vec<Expression>),
+    //MemberAccess(Box<Expression>, Box<Expression>),
 }
 
 #[derive(Debug, Clone)]
-pub struct Literal<'a> {
-    pub token: Token<'a>,
+pub enum UnaryOp {
+    Negate,
+    Not,
+}
+
+#[derive(Debug, Clone)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mult,
+    Div,
+    LShift,
+    RShift,
+    Xor,
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone)]
+pub struct Literal {
+    pub span: ByteSpan,
     pub kind: LiteralKind,
 }
 

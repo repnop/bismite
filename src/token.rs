@@ -75,7 +75,7 @@ pub enum TokenKind {
     FloatLit,
 
     /// String literal.
-    #[regex = "\"([^\"]|\")*\""]
+    #[regex = "\"([^\"]|\\\\\")*\""]
     RawStr,
     /// Identifiers.
     #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
@@ -311,5 +311,16 @@ mod tests {
         assert_and_advance!(TokenKind::FloatLit);
         assert_and_advance!(TokenKind::FloatLit);
         assert_and_advance!(TokenKind::FloatLit);
+    }
+
+    #[test]
+    fn raw_str() {
+        use super::TokenKind;
+        use logos::Logos;
+
+        let mut lexer = TokenKind::lexer(r#""fooabc d e f    h i j\"""#);
+
+        assert_eq!(lexer.token, TokenKind::RawStr);
+        assert_eq!(lexer.slice(), r#""fooabc d e f    h i j\"""#);
     }
 }
