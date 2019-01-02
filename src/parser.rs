@@ -63,17 +63,13 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
         self.eat(TokenKind::LBrace)?;
 
-        let fields;
-
-        match self.peek()? {
+        let fields = match self.peek()? {
             Token {
                 kind: TokenKind::Ident,
                 ..
-            } => {
-                fields = self.parse_fields()?;
-            }
-            tkn => Err(tkn)?,
-        }
+            } => self.parse_fields()?,
+            tkn => return Err(tkn)?,
+        };
 
         let end_span = self.eat(TokenKind::RBrace)?.span;
 
@@ -100,10 +96,12 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                         self.eat(TokenKind::Comma)?;
                     }
 
+                    let end = field_type.span.end();
+
                     fields.push(ast::FieldDecl {
                         ident,
                         field_type,
-                        span: ByteSpan::new(ident.span.start(), field_type.span.end()),
+                        span: ByteSpan::new(ident.span.start(), end),
                     })
                 }
                 TokenKind::RBrace => break,
@@ -170,7 +168,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             let ident = self.parse_ident()?;
             segments.push(ast::PathSegment { ident });
 
-            if !self.eat_optional(TokenKind::PathSeparator)?.is_some() {
+            if self.eat_optional(TokenKind::PathSeparator)?.is_none() {
                 break;
             }
 
@@ -212,11 +210,18 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                 i128::from_str_radix(&self.eat(TokenKind::BinLit)?.lit[2..], 2).unwrap(),
             )),
             TokenKind::FloatLit => Ok(ast::LiteralKind::Float(
-                f64::from_str(self.eat(TokenKind::BinLit)?.lit).unwrap(),
+                f64::from_str(self.eat(TokenKind::FloatLit)?.lit).unwrap(),
             )),
-            TokenKind::FloatLit => Ok(ast::LiteralKind::Float(
-                f64::from_str(self.eat(TokenKind::BinLit)?.lit).unwrap(),
-            )),
+            TokenKind::RawStr => Ok(ast::LiteralKind::RawStr({
+                let tkn = self.eat(TokenKind::RawStr)?;
+                let len = tkn.lit.len();
+
+                GLOBAL_INTERNER
+                    .write()
+                    .unwrap()
+                    .get_or_intern(&tkn.lit[1..len - 1])
+            })),
+            _ => Err(ParserError::UnexpectedToken(self.peek()?)),
         }
     }
 
@@ -292,7 +297,8 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         };
 
         for _ in 0..loop_len {
-            self.token_queue.push_back(self.next()?);
+            let next = self.next()?;
+            self.token_queue.push_back(next);
         }
 
         Ok(*self.token_queue.back().unwrap())
@@ -313,6 +319,7 @@ pub enum ParserError<'src> {
     ExpectedIntegerLit(ast::LiteralKind),
     InvalidToken(Token<'src>, Option<TokenKind>),
     InvalidArraySize(i128),
+    UnexpectedToken(Token<'src>),
 }
 
 impl<'src> From<Token<'src>> for ParserError<'src> {

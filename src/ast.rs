@@ -74,13 +74,13 @@ pub enum ExpressionKind {
     //MemberAccess(Box<Expression>, Box<Expression>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
     Negate,
     Not,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -88,9 +88,43 @@ pub enum BinaryOp {
     Div,
     LShift,
     RShift,
-    Xor,
-    And,
-    Or,
+    BitXor,
+    BitAnd,
+    BitOr,
+    LogicalXor,
+    LogicalAnd,
+    LogicalOr,
+    Eq,
+    Gt,
+    Lt,
+    GtEq,
+    LtEq,
+    NotEq,
+}
+
+impl BinaryOp {
+    fn precedence(self) -> u8 {
+        use self::BinaryOp::*;
+        match self {
+            Add => 9,
+            Sub => 9,
+            Mult => 10,
+            Div => 10,
+            LShift => 8,
+            RShift => 8,
+            LogicalXor | BitXor => 6,
+            BitAnd => 5,
+            BitOr => 4,
+            LogicalAnd => 3,
+            LogicalOr => 2,
+            Eq => 1,
+            Gt => 1,
+            Lt => 1,
+            GtEq => 1,
+            LtEq => 1,
+            NotEq => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

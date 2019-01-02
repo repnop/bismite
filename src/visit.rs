@@ -70,7 +70,7 @@ impl Visitor for SExprVisitor {
         print!("(field ");
         self.visit_name(&f.ident);
         print!(" ");
-        self.visit_name(&f.field_type);
+        //self.visit_name(&f.field_type);
         print!(")");
     }
 
@@ -101,6 +101,7 @@ impl Visitor for SExprVisitor {
             TypeKind::Infer => print!("<inferred>"),
             // TypeKind::Named(s) => print!("{}", s),
             TypeKind::Literal(_) => {}
+            _ => {}
         }
     }
 
@@ -108,7 +109,7 @@ impl Visitor for SExprVisitor {
         use crate::ast::ExpressionKind::*;
 
         print!("(expr ");
-        match &e.kind {
+        /*match &e.kind {
             Literal(i) => self.visit_name(&i.token),
             Identifier(i) => self.visit_name(i),
             Unary(op, expr) => {
@@ -127,7 +128,7 @@ impl Visitor for SExprVisitor {
                     self.visit_expr(expr);
                 }
             }
-        };
+        };*/
         print!(")");
     }
 

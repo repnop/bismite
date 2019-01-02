@@ -75,7 +75,7 @@ pub enum TokenKind {
     FloatLit,
 
     /// String literal.
-    #[regex = "\"([^\"]|\\\\\")*\""]
+    #[regex = r#""([^"]|\\")*""#]
     RawStr,
     /// Identifiers.
     #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
@@ -254,6 +254,7 @@ impl TokenKind {
             LtEq => "operator `<=`",
             GtEq => "operator `>=`",
             NotEq => "operator `!=`",
+            RawStr => "string literal",
         }
     }
 }
