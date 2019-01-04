@@ -69,17 +69,21 @@ pub enum TokenKind {
     OctLit,
     #[regex = "0b[0-1]+"]
     BinLit,
-
     /// Float literals.
     #[regex = "(-|\\+)?[0-9]+(\\.[0-9]+|e[0-9]+)"]
     FloatLit,
-
     /// String literal.
     #[regex = r#""([^"]|\\")*""#]
     RawStr,
+    /// Char literal.
+    #[regex = "'[^']'"]
+    RawChar,
     /// Identifiers.
     #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
     Ident,
+    /// Generic type.
+    #[regex = "'[A-Za-z]+"]
+    Generic,
     /// `(`
     #[token = "("]
     LParen,
@@ -255,6 +259,8 @@ impl TokenKind {
             GtEq => "operator `>=`",
             NotEq => "operator `!=`",
             RawStr => "string literal",
+            RawChar => "character literal",
+            Generic => "generic parameter",
         }
     }
 }
@@ -319,9 +325,32 @@ mod tests {
         use super::TokenKind;
         use logos::Logos;
 
-        let mut lexer = TokenKind::lexer(r#""fooabc d e f    h i j\"""#);
+        let lexer = TokenKind::lexer(r#""fooabc d e f    h i j\"""#);
 
         assert_eq!(lexer.token, TokenKind::RawStr);
         assert_eq!(lexer.slice(), r#""fooabc d e f    h i j\"""#);
+    }
+
+    #[test]
+    fn generics_and_chars() {
+        use super::TokenKind;
+        use logos::Logos;
+
+        let mut lexer = TokenKind::lexer(r#"'a 'ABCD 'x', 'y', '👌'"#);
+
+        macro_rules! assert_and_advance {
+            ($($t:tt)+) => {
+                assert_eq!(lexer.token, $($t)+, "{}", lexer.slice());
+                lexer.advance();
+            };
+        }
+
+        assert_and_advance!(TokenKind::Generic);
+        assert_and_advance!(TokenKind::Generic);
+        assert_and_advance!(TokenKind::RawChar);
+        assert_and_advance!(TokenKind::Comma);
+        assert_and_advance!(TokenKind::RawChar);
+        assert_and_advance!(TokenKind::Comma);
+        assert_and_advance!(TokenKind::RawChar);
     }
 }
