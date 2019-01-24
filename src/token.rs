@@ -76,13 +76,14 @@ pub enum TokenKind {
     #[regex = r#""([^"]|\\")*""#]
     RawStr,
     /// Char literal.
-    #[regex = "'[^']'"]
+    #[regex = "'([^']|\')'"]
     RawChar,
     /// Identifiers.
     #[regex = "[_A-Za-z][_A-Za-z0-9]*"]
     Ident,
     /// Generic type.
-    #[regex = "'[A-Za-z]+"]
+    #[regex = "'[^'0-9\\s]+"]
+    #[callback = "generic_or_char"]
     Generic,
     /// `(`
     #[token = "("]
@@ -265,6 +266,15 @@ impl TokenKind {
     }
 }
 
+fn generic_or_char<'source, Src: logos::Source<'source>>(lexer: &mut logos::Lexer<TokenKind, Src>) {
+    use logos::internal::LexerInternal;
+
+    if lexer.read() == b'\'' {
+        lexer.bump(1);
+        lexer.token = TokenKind::RawChar;
+    }
+}
+
 /// Reserved keywords.
 lazy_static! {
     pub static ref KEYWORDS: HashMap<&'static str, TokenKind> = {
@@ -336,7 +346,7 @@ mod tests {
         use super::TokenKind;
         use logos::Logos;
 
-        let mut lexer = TokenKind::lexer(r#"'a 'ABCD 'x', 'y', '👌'"#);
+        let mut lexer = TokenKind::lexer(r#"'a 'ABCD 'x' 'y' '👌' '👌 '\''"#);
 
         macro_rules! assert_and_advance {
             ($($t:tt)+) => {
@@ -348,9 +358,9 @@ mod tests {
         assert_and_advance!(TokenKind::Generic);
         assert_and_advance!(TokenKind::Generic);
         assert_and_advance!(TokenKind::RawChar);
-        assert_and_advance!(TokenKind::Comma);
         assert_and_advance!(TokenKind::RawChar);
-        assert_and_advance!(TokenKind::Comma);
+        assert_and_advance!(TokenKind::RawChar);
+        assert_and_advance!(TokenKind::Generic);
         assert_and_advance!(TokenKind::RawChar);
     }
 }
