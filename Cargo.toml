@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 codespan = "0.2.0"
 codespan-reporting = "0.2.0"
-derive-new = "0.5.6"
+derive_more = "0.14.0"
 isomorphism = "0.1.2"
 lazy_static = "1.2.0"
 logos = "0.9.7"

@@ -257,6 +257,10 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                 }),
             )),
             TokenKind::LBracket => Ok(self.parse_array_literal()?),
+            TokenKind::Ident => {
+                let ident = self.parse_ident()?;
+                Ok(ast::Literal::new(ident.span, ident.into()))
+            }
             _ => Err(ParserError::UnexpectedToken(self.peek()?)),
         }
     }

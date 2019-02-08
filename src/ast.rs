@@ -1,5 +1,5 @@
 use crate::{parser::GLOBAL_INTERNER, token::*};
-use derive_new::new;
+use derive_more::{Constructor, From};
 use string_interner::Sym;
 
 #[derive(Debug)]
@@ -9,21 +9,21 @@ pub enum Decls {
     Const(ConstDecl),
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct StructDecl {
     pub ident: Ident,
     pub fields: Vec<FieldDecl>,
     pub span: ByteSpan,
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct FieldDecl {
     pub ident: Ident,
     pub field_type: Type,
     pub span: ByteSpan,
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct FnDecl {
     pub ident: Ident,
     pub arguments: Vec<FieldDecl>,
@@ -32,7 +32,7 @@ pub struct FnDecl {
     pub span: ByteSpan,
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct ConstDecl {
     pub ident: Ident,
     pub ty: Type,
@@ -44,7 +44,7 @@ pub enum StatementDecl {
     VarDecl(VarDecl),
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct VarDecl {
     pub ident: Ident,
     pub var_type: Option<Type>,
@@ -52,14 +52,14 @@ pub struct VarDecl {
     pub span: ByteSpan,
 }
 
-#[derive(Debug, Clone, Copy, new)]
+#[derive(Debug, Clone, Copy, Constructor)]
 pub struct Ident {
     pub span: ByteSpan,
     pub id: Sym,
 }
 
 // TODO:
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct Expression {
     pub kind: ExpressionKind,
     pub span: ByteSpan,
@@ -128,21 +128,22 @@ impl BinaryOp {
     }
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct Literal {
     pub span: ByteSpan,
     pub kind: LiteralKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum LiteralKind {
     Int(i128),
     Float(f64),
     RawStr(Sym),
     Array(Vec<Expression>),
+    Ident(Ident),
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct Type {
     pub span: ByteSpan,
     pub kind: TypeKind,
@@ -156,13 +157,13 @@ pub enum TypeKind {
     Literal(LiteralKind),
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct Path {
     pub span: ByteSpan,
     pub segments: Vec<PathSegment>,
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Constructor)]
 pub struct PathSegment {
     pub ident: Ident,
 }
