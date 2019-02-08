@@ -132,7 +132,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
                 ast::TypeKind::Path(path)
             }
-            TokenKind::LBracket => self.parse_array()?,
+            TokenKind::LBracket => self.parse_array_ty()?,
             _ => Err(peek)?,
         };
 
@@ -142,7 +142,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         })
     }
 
-    fn parse_array(&'parser mut self) -> ParseResult<'source, ast::TypeKind> {
+    fn parse_array_ty(&'parser mut self) -> ParseResult<'source, ast::TypeKind> {
         self.eat(TokenKind::LBracket)?;
         let ty = self.parse_type()?;
         self.eat(TokenKind::Semicolon)?;
@@ -184,46 +184,84 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         })
     }
 
+    fn parse_array_literal(&'parser mut self) -> ParseResult<'source, ast::Literal> {
+        let start = self.eat(TokenKind::LBracket)?.span.start();
+        let mut items = Vec::new();
+
+        while self.peek()?.kind != TokenKind::RBracket {
+            items.push(self.parse_expression()?);
+            self.eat(TokenKind::Comma)?;
+        }
+
+        let end = self.eat(TokenKind::RBracket)?.span.end();
+
+        Ok(ast::Literal::new(
+            ByteSpan::new(start, end),
+            ast::LiteralKind::Array(items),
+        ))
+    }
+
     fn parse_integer_literal(&'parser mut self) -> ParseResult<'source, i128> {
         let lit = self.parse_literal()?;
 
-        match lit {
+        match lit.kind {
             ast::LiteralKind::Int(val) => Ok(val),
-            _ => Err(ParserError::ExpectedIntegerLit(lit)),
+            _ => Err(ParserError::ExpectedIntegerLit(lit.kind)),
         }
     }
 
-    fn parse_literal(&'parser mut self) -> ParseResult<'source, ast::LiteralKind> {
+    fn parse_literal(&'parser mut self) -> ParseResult<'source, ast::Literal> {
         use std::str::FromStr;
 
-        match self.peek()?.kind {
-            TokenKind::DecLit => Ok(ast::LiteralKind::Int(
-                i128::from_str_radix(self.eat(TokenKind::DecLit)?.lit, 10).unwrap(),
-            )),
-            TokenKind::HexLit => Ok(ast::LiteralKind::Int(
-                i128::from_str_radix(&self.eat(TokenKind::HexLit)?.lit[2..], 16).unwrap(),
-            )),
-            TokenKind::OctLit => Ok(ast::LiteralKind::Int(
-                i128::from_str_radix(&self.eat(TokenKind::OctLit)?.lit[2..], 8).unwrap(),
-            )),
-            TokenKind::BinLit => Ok(ast::LiteralKind::Int(
-                i128::from_str_radix(&self.eat(TokenKind::BinLit)?.lit[2..], 2).unwrap(),
-            )),
-            TokenKind::FloatLit => Ok(ast::LiteralKind::Float(
-                f64::from_str(self.eat(TokenKind::FloatLit)?.lit).unwrap(),
-            )),
-            TokenKind::RawStr => Ok(ast::LiteralKind::RawStr({
-                let tkn = self.eat(TokenKind::RawStr)?;
-                let len = tkn.lit.len();
+        let peek = self.peek()?;
 
-                GLOBAL_INTERNER
-                    .write()
-                    .unwrap()
-                    .get_or_intern(&tkn.lit[1..len - 1])
-            })),
+        match peek.kind {
+            TokenKind::DecLit => Ok(ast::Literal::new(
+                peek.span,
+                ast::LiteralKind::Int(
+                    i128::from_str_radix(self.eat(TokenKind::DecLit)?.lit, 10).unwrap(),
+                ),
+            )),
+            TokenKind::HexLit => Ok(ast::Literal::new(
+                peek.span,
+                ast::LiteralKind::Int(
+                    i128::from_str_radix(&self.eat(TokenKind::HexLit)?.lit[2..], 16).unwrap(),
+                ),
+            )),
+            TokenKind::OctLit => Ok(ast::Literal::new(
+                peek.span,
+                ast::LiteralKind::Int(
+                    i128::from_str_radix(&self.eat(TokenKind::OctLit)?.lit[2..], 8).unwrap(),
+                ),
+            )),
+            TokenKind::BinLit => Ok(ast::Literal::new(
+                peek.span,
+                ast::LiteralKind::Int(
+                    i128::from_str_radix(&self.eat(TokenKind::BinLit)?.lit[2..], 2).unwrap(),
+                ),
+            )),
+            TokenKind::FloatLit => Ok(ast::Literal::new(
+                peek.span,
+                ast::LiteralKind::Float(f64::from_str(self.eat(TokenKind::FloatLit)?.lit).unwrap()),
+            )),
+            TokenKind::RawStr => Ok(ast::Literal::new(
+                peek.span,
+                ast::LiteralKind::RawStr({
+                    let tkn = self.eat(TokenKind::RawStr)?;
+                    let len = tkn.lit.len();
+
+                    GLOBAL_INTERNER
+                        .write()
+                        .unwrap()
+                        .get_or_intern(&tkn.lit[1..len - 1])
+                }),
+            )),
+            TokenKind::LBracket => Ok(self.parse_array_literal()?),
             _ => Err(ParserError::UnexpectedToken(self.peek()?)),
         }
     }
+
+    fn parse_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {}
 
     fn eat(&'parser mut self, expected: TokenKind) -> ParseResult<'source, Token<'source>> {
         let tkn = self.next()?;
