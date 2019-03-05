@@ -164,6 +164,17 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             peek = self.peek()?;
         }
 
+        let span_start = segments[0].ident.span.start();
+        let span_end = segments[segments.len() - 1].ident.span.end();
+
+        Ok(ast::Path {
+            span: ByteSpan::new(span_start, span_end),
+            segments,
+        })
+    }
+
+    fn parse_path_segment(&'parser mut self) -> ParseResult<'source, ast::PathSegment> {
+        let mut peek = self.peek()?;
         while peek.kind == TokenKind::Ident {
             let ident = self.parse_ident()?;
             segments.push(ast::PathSegment { ident });
@@ -174,14 +185,6 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
             peek = self.peek()?;
         }
-
-        let span_start = segments[0].ident.span.start();
-        let span_end = segments[segments.len() - 1].ident.span.end();
-
-        Ok(ast::Path {
-            span: ByteSpan::new(span_start, span_end),
-            segments,
-        })
     }
 
     fn parse_array_literal(&'parser mut self) -> ParseResult<'source, ast::Literal> {
@@ -266,6 +269,10 @@ impl<'parser, 'source: 'parser> Parser<'source> {
     }
 
     fn parse_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {}
+    
+    fn parse_field_or_method(&'parser mut self, expr: ast::Expression) -> ParseResult<'source, ast::Expression> {
+        let segment = 
+    }
 
     fn eat(&'parser mut self, expected: TokenKind) -> ParseResult<'source, Token<'source>> {
         let tkn = self.next()?;

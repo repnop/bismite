@@ -71,8 +71,9 @@ pub enum ExpressionKind {
     Path(Path),
     Unary(UnaryOp, Box<Expression>),
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
-    FnCall(Box<Expression>, Vec<Expression>),
-    //MemberAccess(Box<Expression>, Box<Expression>),
+    FnCall(Path, Vec<Expression>),
+    FieldAccess(Box<Expression>, Ident),
+    MethodCall(PathSegment, Vec<Box<Expression>>),
 }
 
 #[derive(Debug, Clone, Copy)]
