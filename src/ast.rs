@@ -1,5 +1,6 @@
-use crate::{parser::GLOBAL_INTERNER, token::*};
+use crate::{parser::ParserError, parser::GLOBAL_INTERNER, token::*};
 use derive_more::{Constructor, From};
+use std::convert::TryFrom;
 use string_interner::Sym;
 
 #[derive(Debug)]
@@ -82,6 +83,18 @@ pub enum UnaryOp {
     Not,
 }
 
+impl<'a> TryFrom<Token<'a>> for UnaryOp {
+    type Error = ParserError<'a>;
+
+    fn try_from(kind: Token<'a>) -> Result<UnaryOp, ParserError<'a>> {
+        Ok(match kind.kind {
+            TokenKind::Minus => UnaryOp::Negate,
+            TokenKind::Not => UnaryOp::Not,
+            _ => return Err(ParserError::UnexpectedToken(kind)),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Add,
@@ -90,18 +103,44 @@ pub enum BinaryOp {
     Div,
     LShift,
     RShift,
-    BitXor,
     BitAnd,
     BitOr,
-    LogicalXor,
     LogicalAnd,
     LogicalOr,
+    Xor,
     Eq,
     Gt,
     Lt,
     GtEq,
     LtEq,
     NotEq,
+}
+
+impl<'a> TryFrom<Token<'a>> for BinaryOp {
+    type Error = ParserError<'a>;
+
+    fn try_from(kind: Token<'a>) -> Result<BinaryOp, ParserError<'a>> {
+        Ok(match kind.kind {
+            TokenKind::Plus => BinaryOp::Add,
+            TokenKind::Minus => BinaryOp::Sub,
+            TokenKind::Mult => BinaryOp::Mult,
+            TokenKind::Div => BinaryOp::Div,
+            TokenKind::LShift => BinaryOp::LShift,
+            TokenKind::RShift => BinaryOp::RShift,
+            TokenKind::Xor => BinaryOp::Xor,
+            TokenKind::BitAnd => BinaryOp::BitAnd,
+            TokenKind::BitOr => BinaryOp::BitOr,
+            TokenKind::LogicalAnd => BinaryOp::LogicalAnd,
+            TokenKind::LogicalOr => BinaryOp::LogicalOr,
+            TokenKind::EqTo => BinaryOp::Eq,
+            TokenKind::Gt => BinaryOp::Gt,
+            TokenKind::Lt => BinaryOp::Lt,
+            TokenKind::GtEq => BinaryOp::GtEq,
+            TokenKind::LtEq => BinaryOp::LtEq,
+            TokenKind::NotEq => BinaryOp::NotEq,
+            _ => return Err(ParserError::UnexpectedToken(kind)),
+        })
+    }
 }
 
 impl BinaryOp {
@@ -114,7 +153,7 @@ impl BinaryOp {
             Div => 10,
             LShift => 8,
             RShift => 8,
-            LogicalXor | BitXor => 6,
+            Xor => 6,
             BitAnd => 5,
             BitOr => 4,
             LogicalAnd => 3,

@@ -5,7 +5,11 @@ use crate::{
 use codespan::ByteSpan;
 use lazy_static::lazy_static;
 use logos::{Lexer, Logos};
-use std::{collections::VecDeque, sync::RwLock};
+use std::{
+    collections::VecDeque,
+    convert::{TryFrom, TryInto},
+    sync::RwLock,
+};
 use string_interner::{DefaultStringInterner, Sym};
 
 lazy_static! {
@@ -164,6 +168,10 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             peek = self.peek()?;
         }
 
+        while self.peek()?.kind == TokenKind::Ident {
+            segments.push(self.parse_path_segment()?);
+        }
+
         let span_start = segments[0].ident.span.start();
         let span_end = segments[segments.len() - 1].ident.span.end();
 
@@ -174,17 +182,9 @@ impl<'parser, 'source: 'parser> Parser<'source> {
     }
 
     fn parse_path_segment(&'parser mut self) -> ParseResult<'source, ast::PathSegment> {
-        let mut peek = self.peek()?;
-        while peek.kind == TokenKind::Ident {
-            let ident = self.parse_ident()?;
-            segments.push(ast::PathSegment { ident });
-
-            if self.eat_optional(TokenKind::PathSeparator)?.is_none() {
-                break;
-            }
-
-            peek = self.peek()?;
-        }
+        Ok(ast::PathSegment {
+            ident: self.parse_ident()?,
+        })
     }
 
     fn parse_array_literal(&'parser mut self) -> ParseResult<'source, ast::Literal> {
@@ -269,9 +269,37 @@ impl<'parser, 'source: 'parser> Parser<'source> {
     }
 
     fn parse_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {}
-    
-    fn parse_field_or_method(&'parser mut self, expr: ast::Expression) -> ParseResult<'source, ast::Expression> {
-        let segment = 
+
+    fn parse_inner_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {
+        let peek = self.peek()?;
+    }
+
+    fn parse_primary(&'parser mut self) -> ParseResult<'source, ast::Expression> {
+        let peek = self.peek()?;
+
+        match peek.kind {
+            TokenKind::Ident | TokenKind::PathSeparator => {}
+            TokenKind::LBracket => {}
+            TokenKind::DecLit => {}
+            t @ TokenKind::Minus | t @ TokenKind::Not => {
+                let uo_t = self.next()?;
+                let uo = uo_t.try_into().unwrap();
+                let rhs = self.parse_primary()?;
+                return Ok(ast::Expression::new(
+                    ast::ExpressionKind::Unary(uo, Box::new(rhs)),
+                    ByteSpan::new(uo_t.span.start(), rhs.span.end()),
+                ));
+            }
+        }
+
+        unimplemented!()
+    }
+
+    fn parse_field_or_method(
+        &'parser mut self,
+        expr: ast::Expression,
+    ) -> ParseResult<'source, ast::Expression> {
+        //let segment =
     }
 
     fn eat(&'parser mut self, expected: TokenKind) -> ParseResult<'source, Token<'source>> {

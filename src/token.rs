@@ -211,6 +211,26 @@ pub enum TokenKind {
     /// `!=`
     #[token = "!="]
     NotEq,
+    /// Bitwise/Logical XOR.
+    /// `^`
+    #[token = "^"]
+    Xor,
+    /// Bitwise AND.
+    /// `&`
+    #[token = "&"]
+    BitAnd,
+    /// Bitwise OR.
+    /// `|`
+    #[token = "|"]
+    BitOr,
+    /// Logical AND.
+    /// `&&`
+    #[token = "&&"]
+    LogicalAnd,
+    /// Logical OR.
+    /// `||`
+    #[token = "||"]
+    LogicalOr,
 }
 
 impl TokenKind {
