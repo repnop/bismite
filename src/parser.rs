@@ -19,16 +19,20 @@ lazy_static! {
 
 pub struct Parser<'source> {
     lexer: Lexer<TokenKind, &'source str>,
-    token_queue: VecDeque<Token<'source>>,
+    peek: Option<Token<'source>>,
 }
 
 type ParseResult<'a, T> = Result<T, ParserError<'a>>;
 
 impl<'parser, 'source: 'parser> Parser<'source> {
     pub fn new(input: &'source str) -> Parser<'source> {
+        let mut lexer = TokenKind::lexer(input);
+        let token = Token::new(lexer.token, lexer.slice(), lexer.range());
+        lexer.advance();
+
         Self {
-            lexer: TokenKind::lexer(input),
-            token_queue: VecDeque::new(),
+            lexer,
+            peek: Some(token),
         }
     }
 
@@ -160,12 +164,11 @@ impl<'parser, 'source: 'parser> Parser<'source> {
     }
 
     fn parse_path(&'parser mut self) -> ParseResult<'source, ast::Path> {
-        let mut peek = self.peek()?;
+        let peek = self.peek()?;
         let mut segments = Vec::new();
 
         if peek.kind == TokenKind::PathSeparator {
             self.eat(TokenKind::PathSeparator)?;
-            peek = self.peek()?;
         }
 
         while self.peek()?.kind == TokenKind::Ident {
@@ -268,38 +271,103 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         }
     }
 
-    fn parse_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {}
+    fn parse_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {
+        let prim = self.parse_primary()?;
+        self.parse_inner_expression(prim, 0)
+    }
 
-    fn parse_inner_expression(&'parser mut self) -> ParseResult<'source, ast::Expression> {
-        let peek = self.peek()?;
+    fn parse_inner_expression(
+        &'parser mut self,
+        mut lhs: ast::Expression,
+        min_prec: u8,
+    ) -> ParseResult<'source, ast::Expression> {
+        let mut peek = self.peek()?;
+        let continue_loop = |token| match ast::BinaryOp::try_from(token) {
+            Ok(op) if op.precedence() >= min_prec => (true, op.precedence()),
+            _ => (false, 0),
+        };
+
+        while continue_loop(peek).0 {
+            let op = ast::BinaryOp::try_from(self.next()?).unwrap();
+            let mut rhs = self.parse_primary()?;
+
+            loop {
+                peek = self.peek()?;
+                let (cont, prec) = match ast::BinaryOp::try_from(peek) {
+                    Ok(op2) if op2.precedence() > op.precedence() => (true, op2.precedence()),
+                    _ => (false, 0),
+                };
+
+                if !cont {
+                    break;
+                }
+
+                rhs = self.parse_inner_expression(rhs, prec)?;
+            }
+
+            let lhs_span = lhs.span.start();
+            let rhs_span = rhs.span.end();
+
+            lhs = ast::Expression::new(
+                ast::ExpressionKind::Binary(Box::new(lhs), op, Box::new(rhs)),
+                ByteSpan::new(lhs_span, rhs_span),
+            );
+        }
+
+        use crate::visit::Visitor;
+        let mut visitor = crate::visit::SExprVisitor;
+
+        visitor.visit_expr(&lhs);
+        println!();
+        Ok(lhs)
     }
 
     fn parse_primary(&'parser mut self) -> ParseResult<'source, ast::Expression> {
         let peek = self.peek()?;
 
         match peek.kind {
-            TokenKind::Ident | TokenKind::PathSeparator => {}
-            TokenKind::LBracket => {}
-            TokenKind::DecLit => {}
-            t @ TokenKind::Minus | t @ TokenKind::Not => {
+            TokenKind::Ident | TokenKind::PathSeparator => unimplemented!(),
+            TokenKind::LBracket
+            | TokenKind::DecLit
+            | TokenKind::HexLit
+            | TokenKind::OctLit
+            | TokenKind::BinLit
+            | TokenKind::FloatLit
+            | TokenKind::RawStr => {
+                let lit = self.parse_literal()?;
+                let lit_span = lit.span;
+
+                Ok(ast::Expression::new(
+                    ast::ExpressionKind::Literal(lit),
+                    lit_span,
+                ))
+            }
+            TokenKind::Minus | TokenKind::Not => {
                 let uo_t = self.next()?;
                 let uo = uo_t.try_into().unwrap();
-                let rhs = self.parse_primary()?;
-                return Ok(ast::Expression::new(
+                let rhs = self.parse_expression()?;
+                let rhs_end = rhs.span.end();
+                Ok(ast::Expression::new(
                     ast::ExpressionKind::Unary(uo, Box::new(rhs)),
-                    ByteSpan::new(uo_t.span.start(), rhs.span.end()),
-                ));
+                    ByteSpan::new(uo_t.span.start(), rhs_end),
+                ))
             }
-        }
+            TokenKind::LParen => {
+                self.next()?;
+                let expr = self.parse_expression()?;
+                self.eat(TokenKind::RParen)?;
 
-        unimplemented!()
+                Ok(expr)
+            }
+            _ => unimplemented!(),
+        }
     }
 
     fn parse_field_or_method(
         &'parser mut self,
         expr: ast::Expression,
     ) -> ParseResult<'source, ast::Expression> {
-        //let segment =
+        unimplemented!()
     }
 
     fn eat(&'parser mut self, expected: TokenKind) -> ParseResult<'source, Token<'source>> {
@@ -341,7 +409,10 @@ impl<'parser, 'source: 'parser> Parser<'source> {
     }
 
     fn next(&'parser mut self) -> ParseResult<'source, Token<'source>> {
-        if self.token_queue.is_empty() {
+        if let Some(tkn) = self.peek {
+            self.peek = None;
+            Ok(tkn)
+        } else {
             let tkn = Token::new(self.lexer.token, self.lexer.slice(), self.lexer.range());
 
             let ret = match &tkn.kind {
@@ -352,42 +423,26 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             self.lexer.advance();
 
             ret
-        } else {
-            match self.token_queue.pop_front() {
-                Some(tkn) => Ok(tkn),
-                None => Err(Token::new(
-                    TokenKind::Eof,
-                    self.lexer.slice(),
-                    self.lexer.range(),
-                ))?,
-            }
         }
-    }
-
-    fn peek_n(&'parser mut self, n: usize) -> ParseResult<'source, Token<'source>> {
-        self.token_queue.clear();
-
-        let loop_len = if n >= self.token_queue.len() {
-            n - self.token_queue.len()
-        } else {
-            return Ok(self.token_queue[n]);
-        };
-
-        for _ in 0..loop_len {
-            let next = self.next()?;
-            self.token_queue.push_back(next);
-        }
-
-        Ok(*self.token_queue.back().unwrap())
     }
 
     fn peek(&'parser mut self) -> ParseResult<'source, Token<'source>> {
-        self.peek_n(1)
+        if let Some(tkn) = self.peek {
+            Ok(tkn)
+        } else {
+            let tkn = self.next()?;
+            self.peek = Some(tkn);
+            Ok(tkn)
+        }
     }
+}
 
-    fn peek2(&'parser mut self) -> ParseResult<'source, Token<'source>> {
-        self.peek_n(2)
-    }
+#[test]
+fn aaaaaaa() {
+    let mut parser = Parser::new("10 + 5 - (2 * 3 / (3 ^ 8)) == 7");
+
+    println!("{:?}", parser.parse_expression());
+    panic!();
 }
 
 /// Represents a parser error.

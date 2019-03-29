@@ -1,5 +1,6 @@
 use crate::{parser::ParserError, parser::GLOBAL_INTERNER, token::*};
 use derive_more::{Constructor, From};
+use itertools::Itertools;
 use std::convert::TryFrom;
 use string_interner::Sym;
 
@@ -59,6 +60,17 @@ pub struct Ident {
     pub id: Sym,
 }
 
+impl ToString for Ident {
+    fn to_string(&self) -> String {
+        GLOBAL_INTERNER
+            .read()
+            .unwrap()
+            .resolve(self.id)
+            .unwrap()
+            .to_string()
+    }
+}
+
 // TODO:
 #[derive(Debug, Clone, Constructor)]
 pub struct Expression {
@@ -81,6 +93,16 @@ pub enum ExpressionKind {
 pub enum UnaryOp {
     Negate,
     Not,
+}
+
+impl ToString for UnaryOp {
+    fn to_string(&self) -> String {
+        match self {
+            UnaryOp::Negate => "-",
+            UnaryOp::Not => "!",
+        }
+        .to_string()
+    }
 }
 
 impl<'a> TryFrom<Token<'a>> for UnaryOp {
@@ -116,6 +138,31 @@ pub enum BinaryOp {
     NotEq,
 }
 
+impl ToString for BinaryOp {
+    fn to_string(&self) -> String {
+        match self {
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mult => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::LShift => "<<",
+            BinaryOp::RShift => ">>",
+            BinaryOp::BitAnd => "&",
+            BinaryOp::BitOr => "|",
+            BinaryOp::LogicalAnd => "&&",
+            BinaryOp::LogicalOr => "||",
+            BinaryOp::Xor => "^",
+            BinaryOp::Eq => "==",
+            BinaryOp::Gt => ">",
+            BinaryOp::Lt => "<",
+            BinaryOp::GtEq => ">=",
+            BinaryOp::LtEq => "<=",
+            BinaryOp::NotEq => "!=",
+        }
+        .to_string()
+    }
+}
+
 impl<'a> TryFrom<Token<'a>> for BinaryOp {
     type Error = ParserError<'a>;
 
@@ -144,7 +191,7 @@ impl<'a> TryFrom<Token<'a>> for BinaryOp {
 }
 
 impl BinaryOp {
-    fn precedence(self) -> u8 {
+    pub fn precedence(self) -> u8 {
         use self::BinaryOp::*;
         match self {
             Add => 9,
