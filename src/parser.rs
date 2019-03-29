@@ -196,7 +196,10 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
         while self.peek()?.kind != TokenKind::RBracket {
             items.push(self.parse_expression()?);
-            self.eat(TokenKind::Comma)?;
+
+            if self.peek()?.kind != TokenKind::RBracket {
+                self.eat(TokenKind::Comma)?;
+            }
         }
 
         let end = self.eat(TokenKind::RBracket)?.span.end();
@@ -290,19 +293,14 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         while continue_loop(peek).0 {
             let op = ast::BinaryOp::try_from(self.next()?).unwrap();
             let mut rhs = self.parse_primary()?;
+            peek = self.peek()?;
 
-            loop {
-                peek = self.peek()?;
-                let (cont, prec) = match ast::BinaryOp::try_from(peek) {
-                    Ok(op2) if op2.precedence() > op.precedence() => (true, op2.precedence()),
-                    _ => (false, 0),
-                };
-
-                if !cont {
-                    break;
-                }
-
+            while let (true, prec) = match ast::BinaryOp::try_from(peek) {
+                Ok(op2) if op2.precedence() > op.precedence() => (true, op2.precedence()),
+                _ => (false, 0),
+            } {
                 rhs = self.parse_inner_expression(rhs, prec)?;
+                peek = self.peek()?;
             }
 
             let lhs_span = lhs.span.start();
@@ -318,7 +316,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         let mut visitor = crate::visit::SExprVisitor;
 
         visitor.visit_expr(&lhs);
-        println!();
+        println!("\n");
         Ok(lhs)
     }
 
@@ -439,7 +437,15 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
 #[test]
 fn aaaaaaa() {
-    let mut parser = Parser::new("10 + 5 - (2 * 3 / (3 ^ 8)) == 7");
+    let mut parser = Parser::new("(10 + 5 - (2 * 3 / (3 ^ 8)) == 7) != 1;");
+
+    println!("{:?}", parser.parse_expression());
+    panic!();
+}
+
+#[test]
+fn aaaaaaa2() {
+    let mut parser = Parser::new(r#"[0, 1, 2, 3] + "foo bar" - -52.0;"#);
 
     println!("{:?}", parser.parse_expression());
     panic!();

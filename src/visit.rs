@@ -148,7 +148,7 @@ impl Visitor for SExprVisitor {
             LiteralKind::Array(es) => {
                 print!("[");
 
-                for expr in &es[..es.len()] {
+                for expr in &es[..es.len() - 1] {
                     self.visit_expr(expr);
                     print!(", ");
                 }
