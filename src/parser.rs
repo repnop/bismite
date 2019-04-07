@@ -57,13 +57,21 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
             match peek.kind {
                 TokenKind::Struct => decls.push(ast::Decls::Struct(self.parse_struct()?)),
-                // TokenKind::Fn => decls.push_fn(self.parse_fn()?),
+                TokenKind::Fn => decls.push(ast::Decls::Fn(self.parse_fn()?)),
                 _ => Err(peek)?,
             }
         }
 
         Ok(decls)
     }
+
+    fn parse_fn(&'parser mut self) -> ParseResult<'source, ast::FnDecl> {
+        let fn_token = self.eat(TokenKind::Fn)?;
+        let ident = self.parse_ident()?;
+        self.eat(TokenKind::LParen)?;
+    }
+
+    fn parse_named_parameters(&'parser mut self) -> ParseResult<'source, Vec<ast::ParameterDecl>> {}
 
     fn parse_struct(&'parser mut self) -> ParseResult<'source, ast::StructDecl> {
         let span_begin = self.eat(TokenKind::Struct)?.span;
@@ -76,7 +84,7 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                 kind: TokenKind::Ident,
                 ..
             } => self.parse_fields()?,
-            tkn => return Err(tkn)?,
+            tkn => Err(tkn)?,
         };
 
         let end_span = self.eat(TokenKind::RBrace)?.span;
@@ -312,11 +320,6 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             );
         }
 
-        use crate::visit::Visitor;
-        let mut visitor = crate::visit::SExprVisitor;
-
-        visitor.visit_expr(&lhs);
-        println!("\n");
         Ok(lhs)
     }
 
@@ -324,7 +327,32 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         let peek = self.peek()?;
 
         match peek.kind {
-            TokenKind::Ident | TokenKind::PathSeparator => unimplemented!(),
+            TokenKind::Ident | TokenKind::PathSeparator => {
+                let path = self.parse_path()?;
+                let path_start = path.span.start();
+                let path_end = path.span.end();
+
+                match self.peek()?.kind {
+                    TokenKind::Period => {
+                        self.eat(TokenKind::Period)?;
+                        self.parse_field_or_method(ast::Expression::new(
+                            ast::ExpressionKind::Path(path),
+                            ByteSpan::new(path_start, path_end),
+                        ))
+                    }
+                    TokenKind::LParen => {
+                        self.eat(TokenKind::LParen)?;
+                        let list = self.parse_expr_list(TokenKind::RParen)?;
+                        let end = self.eat(TokenKind::RParen)?.span.end();
+
+                        Ok(ast::Expression::new(
+                            ast::ExpressionKind::FnCall(path, list),
+                            ByteSpan::new(path_start, end),
+                        ))
+                    }
+                    _ => Err(ParserError::UnexpectedToken(self.peek()?)),
+                }
+            }
             TokenKind::LBracket
             | TokenKind::DecLit
             | TokenKind::HexLit
@@ -359,6 +387,29 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             }
             _ => unimplemented!(),
         }
+    }
+
+    fn parse_expr_list(
+        &'parser mut self,
+        closing: TokenKind,
+    ) -> ParseResult<'source, Vec<ast::Expression>> {
+        let mut exprs = Vec::new();
+
+        loop {
+            exprs.push(self.parse_expression()?);
+
+            let peek = self.peek()?;
+
+            if peek.kind == TokenKind::Comma {
+                self.eat(TokenKind::Comma)?;
+
+                if self.peek()?.kind == closing {
+                    break;
+                }
+            }
+        }
+
+        Ok(exprs)
     }
 
     fn parse_field_or_method(

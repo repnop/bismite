@@ -25,10 +25,12 @@ pub struct FieldDecl {
     pub span: ByteSpan,
 }
 
+pub type ParameterDecl = FieldDecl;
+
 #[derive(Debug, Clone, Constructor)]
 pub struct FnDecl {
     pub ident: Ident,
-    pub arguments: Vec<FieldDecl>,
+    pub parameters: Vec<FieldDecl>,
     pub return_type: Option<Type>,
     pub statements: Vec<StatementDecl>,
     pub span: ByteSpan,

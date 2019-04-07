@@ -49,7 +49,7 @@ impl Visitor for SExprVisitor {
         print!("(fn ");
         self.visit_ident(&f.ident);
 
-        for field in &f.arguments {
+        for field in &f.parameters {
             self.visit_field(field);
         }
 
