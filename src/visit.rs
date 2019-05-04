@@ -24,6 +24,7 @@ pub trait Visitor {
     fn visit_const(&mut self, c: &ConstDecl);
     fn visit_ty(&mut self, ty: &Type);
     fn visit_literal(&mut self, lit: &Literal);
+    fn visit_path(&mut self, path: &Path);
 }
 
 pub struct SExprVisitor;
@@ -114,16 +115,42 @@ impl Visitor for SExprVisitor {
                 self.visit_expr(left);
                 self.visit_expr(right);
             }
-            /*FnCall(i, args) => {
-                self.visit_ident(i);
+            FnCall(i, args) => {
+                print!("(");
+                self.visit_path(i);
+                print!(" ");
 
                 for expr in args {
                     self.visit_expr(expr);
                 }
-            }*/
+                print!(")");
+            }
+            FieldAccess(prev, i) => {
+                print!("(");
+                self.visit_expr(prev);
+                print!(" . ");
+                self.visit_ident(i);
+                print!(")");
+            }
+            Path(p) => self.visit_path(p),
+            MethodCall(i, exprs) => {
+                self.visit_ident(&i.ident);
+                for expr in exprs {
+                    self.visit_expr(expr);
+                }
+            }
             _ => unimplemented!(),
         };
         print!(")");
+    }
+
+    fn visit_path(&mut self, path: &Path) {
+        for part in &path.segments[..path.segments.len() - 1] {
+            self.visit_ident(&part.ident);
+            print!("::");
+        }
+
+        self.visit_ident(&path.segments.last().unwrap().ident);
     }
 
     fn visit_const(&mut self, c: &ConstDecl) {

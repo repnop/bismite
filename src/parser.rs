@@ -69,9 +69,89 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         let fn_token = self.eat(TokenKind::Fn)?;
         let ident = self.parse_ident()?;
         self.eat(TokenKind::LParen)?;
+
+        let mut parameters = Vec::new();
+
+        while self.peek()?.kind != TokenKind::RParen {
+            parameters.push(self.parse_named_parameter()?);
+
+            if self.peek()?.kind == TokenKind::Comma {
+                self.eat(TokenKind::Comma)?;
+            }
+        }
+
+        self.eat(TokenKind::RParen)?;
+
+        let ret = if self.peek()?.kind == TokenKind::Arrow {
+            self.eat(TokenKind::Arrow)?;
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        self.eat(TokenKind::LBrace)?;
+
+        let mut statements = Vec::new();
+
+        while self.peek()?.kind != TokenKind::RBrace {
+            statements.push(self.parse_statement()?);
+        }
+
+        let rb = self.eat(TokenKind::RBrace)?;
+
+        Ok(ast::FnDecl::new(
+            ident,
+            parameters,
+            ret,
+            statements,
+            ByteSpan::new(fn_token.span.start(), rb.span.end()),
+        ))
     }
 
-    fn parse_named_parameters(&'parser mut self) -> ParseResult<'source, Vec<ast::ParameterDecl>> {}
+    fn parse_named_parameter(&'parser mut self) -> ParseResult<'source, ast::ParameterDecl> {
+        let ident = self.parse_ident()?;
+        self.eat(TokenKind::Colon)?;
+        let ty = self.parse_type()?;
+
+        let (start, end) = (ident.span.start(), ty.span.end());
+
+        Ok(ast::ParameterDecl::new(
+            ident,
+            ty,
+            ByteSpan::new(start, end),
+        ))
+    }
+
+    fn parse_statement(&'parser mut self) -> ParseResult<'source, ast::StatementDecl> {
+        match self.peek()?.kind {
+            TokenKind::Let => self.parse_variable_decl(),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn parse_variable_decl(&'parser mut self) -> ParseResult<'source, ast::StatementDecl> {
+        let l = self.eat(TokenKind::Let)?;
+        let ident = self.parse_ident()?;
+
+        let ty = if self.peek()?.kind == TokenKind::Colon {
+            self.eat(TokenKind::Colon)?;
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        self.eat(TokenKind::Assign)?;
+
+        let expr = self.parse_expression()?;
+        let s = self.eat(TokenKind::Semicolon)?;
+
+        Ok(ast::StatementDecl::VarDecl(ast::VarDecl::new(
+            ident,
+            ty,
+            expr,
+            ByteSpan::new(l.span.start(), s.span.end()),
+        )))
+    }
 
     fn parse_struct(&'parser mut self) -> ParseResult<'source, ast::StructDecl> {
         let span_begin = self.eat(TokenKind::Struct)?.span;
@@ -213,8 +293,8 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         let end = self.eat(TokenKind::RBracket)?.span.end();
 
         Ok(ast::Literal::new(
-            ByteSpan::new(start, end),
             ast::LiteralKind::Array(items),
+            ByteSpan::new(start, end),
         ))
     }
 
@@ -234,35 +314,34 @@ impl<'parser, 'source: 'parser> Parser<'source> {
 
         match peek.kind {
             TokenKind::DecLit => Ok(ast::Literal::new(
-                peek.span,
                 ast::LiteralKind::Int(
                     i128::from_str_radix(self.eat(TokenKind::DecLit)?.lit, 10).unwrap(),
                 ),
+                peek.span,
             )),
             TokenKind::HexLit => Ok(ast::Literal::new(
-                peek.span,
                 ast::LiteralKind::Int(
                     i128::from_str_radix(&self.eat(TokenKind::HexLit)?.lit[2..], 16).unwrap(),
                 ),
+                peek.span,
             )),
             TokenKind::OctLit => Ok(ast::Literal::new(
-                peek.span,
                 ast::LiteralKind::Int(
                     i128::from_str_radix(&self.eat(TokenKind::OctLit)?.lit[2..], 8).unwrap(),
                 ),
+                peek.span,
             )),
             TokenKind::BinLit => Ok(ast::Literal::new(
-                peek.span,
                 ast::LiteralKind::Int(
                     i128::from_str_radix(&self.eat(TokenKind::BinLit)?.lit[2..], 2).unwrap(),
                 ),
+                peek.span,
             )),
             TokenKind::FloatLit => Ok(ast::Literal::new(
-                peek.span,
                 ast::LiteralKind::Float(f64::from_str(self.eat(TokenKind::FloatLit)?.lit).unwrap()),
+                peek.span,
             )),
             TokenKind::RawStr => Ok(ast::Literal::new(
-                peek.span,
                 ast::LiteralKind::RawStr({
                     let tkn = self.eat(TokenKind::RawStr)?;
                     let len = tkn.lit.len();
@@ -272,11 +351,12 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                         .unwrap()
                         .get_or_intern(&tkn.lit[1..len - 1])
                 }),
+                peek.span,
             )),
             TokenKind::LBracket => Ok(self.parse_array_literal()?),
             TokenKind::Ident => {
                 let ident = self.parse_ident()?;
-                Ok(ast::Literal::new(ident.span, ident.into()))
+                Ok(ast::Literal::new(ident.into(), ident.span))
             }
             _ => Err(ParserError::UnexpectedToken(self.peek()?)),
         }
@@ -314,10 +394,33 @@ impl<'parser, 'source: 'parser> Parser<'source> {
             let lhs_span = lhs.span.start();
             let rhs_span = rhs.span.end();
 
-            lhs = ast::Expression::new(
-                ast::ExpressionKind::Binary(Box::new(lhs), op, Box::new(rhs)),
-                ByteSpan::new(lhs_span, rhs_span),
-            );
+            if op == ast::BinaryOp::Access {
+                if let ast::ExpressionKind::Literal(ast::Literal {
+                    kind: ast::LiteralKind::Ident(ident),
+                    ..
+                }) = rhs.kind
+                {
+                    lhs = ast::Expression::new(
+                        ast::ExpressionKind::FieldAccess(Box::new(lhs), ident),
+                        ByteSpan::new(lhs_span, rhs_span),
+                    );
+                } else if let ast::ExpressionKind::FnCall(mut segment, mut exprs) = rhs.kind {
+                    lhs = ast::Expression::new(
+                        ast::ExpressionKind::MethodCall(segment.segments.remove(0), {
+                            exprs.insert(0, lhs);
+                            exprs
+                        }),
+                        ByteSpan::new(lhs_span, rhs_span),
+                    );
+                } else {
+                    panic!("error here");
+                }
+            } else {
+                lhs = ast::Expression::new(
+                    ast::ExpressionKind::Binary(Box::new(lhs), op, Box::new(rhs)),
+                    ByteSpan::new(lhs_span, rhs_span),
+                );
+            }
         }
 
         Ok(lhs)
@@ -327,32 +430,37 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         let peek = self.peek()?;
 
         match peek.kind {
-            TokenKind::Ident | TokenKind::PathSeparator => {
-                let path = self.parse_path()?;
-                let path_start = path.span.start();
-                let path_end = path.span.end();
+            TokenKind::Ident => {
+                let ident = self.parse_ident()?;
 
                 match self.peek()?.kind {
-                    TokenKind::Period => {
-                        self.eat(TokenKind::Period)?;
-                        self.parse_field_or_method(ast::Expression::new(
-                            ast::ExpressionKind::Path(path),
-                            ByteSpan::new(path_start, path_end),
-                        ))
-                    }
                     TokenKind::LParen => {
                         self.eat(TokenKind::LParen)?;
                         let list = self.parse_expr_list(TokenKind::RParen)?;
                         let end = self.eat(TokenKind::RParen)?.span.end();
 
                         Ok(ast::Expression::new(
-                            ast::ExpressionKind::FnCall(path, list),
-                            ByteSpan::new(path_start, end),
+                            ast::ExpressionKind::FnCall(
+                                ast::Path::new(vec![ast::PathSegment { ident }], ident.span),
+                                list,
+                            ),
+                            ByteSpan::new(ident.span.start(), end),
                         ))
                     }
-                    _ => Err(ParserError::UnexpectedToken(self.peek()?)),
+                    _ => Ok(ast::Expression::new(
+                        ast::ExpressionKind::Literal(ast::Literal::new(
+                            ast::LiteralKind::Ident(ident),
+                            ident.span,
+                        )),
+                        ident.span,
+                    )),
                 }
             }
+            /*TokenKind::PathSeparator => {
+                let path = self.parse_path()?;
+                let path_start = path.span.start();
+                let path_end = path.span.end();
+            }*/
             TokenKind::LBracket
             | TokenKind::DecLit
             | TokenKind::HexLit
@@ -406,6 +514,8 @@ impl<'parser, 'source: 'parser> Parser<'source> {
                 if self.peek()?.kind == closing {
                     break;
                 }
+            } else if peek.kind == closing {
+                break;
             }
         }
 
@@ -416,7 +526,34 @@ impl<'parser, 'source: 'parser> Parser<'source> {
         &'parser mut self,
         expr: ast::Expression,
     ) -> ParseResult<'source, ast::Expression> {
-        unimplemented!()
+        let expr_start = expr.span.start();
+        let ident = self.parse_ident()?;
+
+        if self.peek()?.kind == TokenKind::LParen {
+            self.eat(TokenKind::LParen)?;
+            let exprs = self.parse_expr_list(TokenKind::RParen)?;
+            let rp = self.eat(TokenKind::RParen)?;
+            Ok(ast::Expression::new(
+                ast::ExpressionKind::MethodCall(
+                    if let ast::Expression {
+                        kind: ast::ExpressionKind::Path(path),
+                        ..
+                    } = &expr
+                    {
+                        path.segments.last().unwrap().clone()
+                    } else {
+                        panic!("Start of method call was not a path")
+                    },
+                    exprs,
+                ),
+                ByteSpan::new(expr_start, rp.span.end()),
+            ))
+        } else {
+            Ok(ast::Expression::new(
+                ast::ExpressionKind::FieldAccess(Box::new(expr), ident),
+                ByteSpan::new(expr_start, ident.span.end()),
+            ))
+        }
     }
 
     fn eat(&'parser mut self, expected: TokenKind) -> ParseResult<'source, Token<'source>> {

@@ -88,10 +88,10 @@ pub enum ExpressionKind {
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     FnCall(Path, Vec<Expression>),
     FieldAccess(Box<Expression>, Ident),
-    MethodCall(PathSegment, Vec<Box<Expression>>),
+    MethodCall(PathSegment, Vec<Expression>),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnaryOp {
     Negate,
     Not,
@@ -119,7 +119,7 @@ impl<'a> TryFrom<Token<'a>> for UnaryOp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -138,6 +138,7 @@ pub enum BinaryOp {
     GtEq,
     LtEq,
     NotEq,
+    Access,
 }
 
 impl ToString for BinaryOp {
@@ -160,6 +161,7 @@ impl ToString for BinaryOp {
             BinaryOp::GtEq => ">=",
             BinaryOp::LtEq => "<=",
             BinaryOp::NotEq => "!=",
+            BinaryOp::Access => ".",
         }
         .to_string()
     }
@@ -187,6 +189,7 @@ impl<'a> TryFrom<Token<'a>> for BinaryOp {
             TokenKind::GtEq => BinaryOp::GtEq,
             TokenKind::LtEq => BinaryOp::LtEq,
             TokenKind::NotEq => BinaryOp::NotEq,
+            TokenKind::Period => BinaryOp::Access,
             _ => return Err(ParserError::UnexpectedToken(kind)),
         })
     }
@@ -196,6 +199,7 @@ impl BinaryOp {
     pub fn precedence(self) -> u8 {
         use self::BinaryOp::*;
         match self {
+            Access => 10,
             Mult => 9,
             Div => 9,
             Add => 8,
@@ -219,8 +223,8 @@ impl BinaryOp {
 
 #[derive(Debug, Clone, Constructor)]
 pub struct Literal {
-    pub span: ByteSpan,
     pub kind: LiteralKind,
+    pub span: ByteSpan,
 }
 
 #[derive(Debug, Clone, From)]
@@ -234,8 +238,8 @@ pub enum LiteralKind {
 
 #[derive(Debug, Clone, Constructor)]
 pub struct Type {
-    pub span: ByteSpan,
     pub kind: TypeKind,
+    pub span: ByteSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -248,8 +252,8 @@ pub enum TypeKind {
 
 #[derive(Debug, Clone, Constructor)]
 pub struct Path {
-    pub span: ByteSpan,
     pub segments: Vec<PathSegment>,
+    pub span: ByteSpan,
 }
 
 #[derive(Debug, Clone, Constructor)]
