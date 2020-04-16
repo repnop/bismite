@@ -122,11 +122,11 @@ impl<'a> Parser<'a> {
     fn inner_expr(&mut self, curr_binop: Option<BinOp>) -> Result<Expression> {
         let mut primary = self.parse_primary_expr()?;
 
-        if self.peek().is_err() {
-            return Ok(primary);
-        }
-
         loop {
+            if self.peek().is_err() {
+                return Ok(primary);
+            }
+
             if self.peek()?.is_binop() {
                 let binop = self.binop()?;
 
@@ -134,13 +134,13 @@ impl<'a> Parser<'a> {
                     return Err(ParseError::BadBinOp);
                 }
 
-                let rhs = self.inner_expr(Some(binop))?;
+                let rhs = self.parse_primary_expr()?;
                 let span = primary.span.merge(rhs.span);
 
-                return Ok(Expression {
+                primary = Expression {
                     kind: ExpressionKind::BinaryOperation(Box::new(primary), binop, Box::new(rhs)),
                     span,
-                });
+                };
             } else if self.peek()?.kind == TokenKind::LeftParen {
                 let mut exprs = Vec::new();
                 self.eat(TokenKind::LeftParen)?;
@@ -212,7 +212,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn eat(&mut self, kind: TokenKind) -> Result<Span> {
+    pub fn eat(&mut self, kind: TokenKind) -> Result<Span> {
         let token = self.token()?;
 
         if token.kind() == &kind {
@@ -222,7 +222,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn peek(&mut self) -> Result<Token> {
+    pub fn peek(&mut self) -> Result<Token> {
         match self.peeks.front() {
             Some(tkn) => Ok(tkn.clone()),
             None => {
@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn peek2(&mut self) -> Result<Token> {
+    pub fn peek2(&mut self) -> Result<Token> {
         match self.peeks.back() {
             Some(tkn) if self.peeks.len() == 2 => Ok(tkn.clone()),
             _ => {
@@ -241,7 +241,7 @@ impl<'a> Parser<'a> {
                     loop {
                         let token = self.lexer.next().ok_or(ParseError::Eof)?;
 
-                        if token == TokenKind::NewLine {
+                        if token == TokenKind::Whitespace {
                             continue;
                         }
 
@@ -257,7 +257,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn binop(&mut self) -> Result<BinOp> {
+    pub fn binop(&mut self) -> Result<BinOp> {
         let token = self.token()?;
 
         match token.kind {
@@ -268,13 +268,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn token(&mut self) -> Result<Token> {
+    pub fn token(&mut self) -> Result<Token> {
         match self.peeks.pop_front() {
             Some(tkn) => Ok(tkn),
             None => loop {
                 let token = self.lexer.next().ok_or(ParseError::Eof)?;
 
-                if token == TokenKind::NewLine {
+                if token == TokenKind::Whitespace {
                     continue;
                 }
 

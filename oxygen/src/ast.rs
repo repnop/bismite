@@ -40,6 +40,7 @@ pub enum ExpressionKind {
     Identifier(String),
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
     FnCall(Box<Expression>, Vec<Expression>),
+    Unary(),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -47,6 +48,10 @@ pub enum BinOp {
     Plus,
     Minus,
     Mult,
+}
+
+pub enum UnaryOp {
+    Minus,
 }
 
 #[derive(Debug)]

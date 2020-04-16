@@ -95,20 +95,29 @@ fn main() {
                 (Mode::Eval, Parser::new(&code))
             };
 
-            loop {
-                match (mode, parser.guess()) {
-                    (Mode::Eval, Ok(Some(node))) => env.eval(node),
-                    (Mode::Ast, Ok(Some(node))) => println!("{:#?}", node),
-                    (_, Ok(None)) => break,
-                    (_, Err(ParseError::Eof)) => {
-                        print!("|");
-                        keep_code = true;
-                        break;
-                    }
-                    (_, Err(e)) => {
-                        println!("{:?}", e);
-                        break;
-                    }
+            let node = parser.guess();
+            let next = parser.token();
+
+            match (&node, next) {
+                (Ok(Some(_)), Err(ParseError::Eof)) => {}
+                (Ok(Some(_)), _) => {
+                    println!("Can only eval one thing at a time");
+                    code.clear();
+                    continue;
+                }
+                _ => {}
+            }
+
+            match (mode, node) {
+                (Mode::Eval, Ok(Some(node))) => env.eval(node),
+                (Mode::Ast, Ok(Some(node))) => println!("{:#?}", node),
+                (_, Ok(None)) => break,
+                (_, Err(ParseError::Eof)) => {
+                    print!("|");
+                    keep_code = true;
+                }
+                (_, Err(e)) => {
+                    println!("{:?}", e);
                 }
             }
 

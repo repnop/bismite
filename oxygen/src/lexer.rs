@@ -89,6 +89,6 @@ pub enum TokenKind {
     Generic(String),
     Character(char),
 
-    #[token = "\n"]
-    NewLine,
+    #[regex = "[\n\r\t]+"]
+    Whitespace,
 }
