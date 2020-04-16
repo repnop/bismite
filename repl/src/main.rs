@@ -1,5 +1,5 @@
 use oxygen::{
-    ast::{AstNode, BinOp, Expression, ExpressionKind},
+    ast::{AstNode, BinOp, Expression, ExpressionKind, Statement},
     ParseError, Parser,
 };
 use std::io::{stdin, stdout, BufRead, Write};
@@ -12,6 +12,9 @@ impl Env {
             AstNode::Expression(e) => {
                 let res = self.eval_expr(e);
                 println!("{:?}", res);
+            }
+            AstNode::Statement(Statement::Expression(e)) => {
+                self.eval_expr(e);
             }
             _ => todo!(),
         }
@@ -47,7 +50,7 @@ impl Env {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
     Ast,
     Eval,
@@ -79,9 +82,8 @@ fn get_input() -> Option<String> {
 
 fn main() {
     let mut code = String::new();
-    loop {
+    'outer: loop {
         let mut env = Env;
-        let mut keep_code = false;
         if let Some(input) = get_input() {
             code += &input;
             let (mode, mut parser) = if code.starts_with(".ast:") {
@@ -95,35 +97,45 @@ fn main() {
                 (Mode::Eval, Parser::new(&code))
             };
 
-            let node = parser.guess();
-            let next = parser.token();
+            let mut nodes = Vec::new();
+            let mut hit_expr = false;
 
-            match (&node, next) {
-                (Ok(Some(_)), Err(ParseError::Eof)) => {}
-                (Ok(Some(_)), _) => {
-                    println!("Can only eval one thing at a time");
-                    code.clear();
-                    continue;
-                }
-                _ => {}
-            }
+            loop {
+                let node = parser.guess();
 
-            match (mode, node) {
-                (Mode::Eval, Ok(Some(node))) => env.eval(node),
-                (Mode::Ast, Ok(Some(node))) => println!("{:#?}", node),
-                (_, Ok(None)) => break,
-                (_, Err(ParseError::Eof)) => {
+                if let Err(ParseError::Eof) = &node {
                     print!("|");
-                    keep_code = true;
+                    continue 'outer;
                 }
-                (_, Err(e)) => {
-                    println!("{:?}", e);
+
+                if hit_expr && matches!(&node, Ok(Some(AstNode::Expression(_)))) {
+                    println!("Can only eval one expression per line");
+                    code.clear();
+                    continue 'outer;
+                }
+
+                match node {
+                    Ok(Some(node)) => {
+                        hit_expr = matches!(&node, AstNode::Expression(_));
+                        nodes.push(node);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        println!("{:?}", e);
+                        code.clear();
+                        continue 'outer;
+                    }
                 }
             }
 
-            if !keep_code {
-                code.clear();
+            for node in nodes {
+                match mode {
+                    Mode::Eval => env.eval(node),
+                    Mode::Ast => println!("{:#?}", node),
+                }
             }
+
+            code.clear();
         }
     }
 }
