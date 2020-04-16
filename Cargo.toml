@@ -1,16 +1,6 @@
-[package]
-authors = ["rep-nop <repnop@outlook.com>"]
-name = "bismite"
-version = "0.1.0"
-edition = "2018"
-
-[dependencies]
-codespan = "0.2.0"
-codespan-reporting = "0.2.0"
-derive_more = "0.14.0"
-isomorphism = "0.1.2"
-itertools = "0.8.0"
-lazy_static = "1.2.0"
-logos = "0.9.7"
-structopt = "0.2.14"
-string-interner = "0.7.0"
+[workspace]
+members = [
+    "oxygen",
+    "repl",
+    "strcache",
+]

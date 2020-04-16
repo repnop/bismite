@@ -1,6 +1,0 @@
-fn test() {
-    let foo = fn_call(1 + 1 * 2, potato);
-    let bar = a.method(call);
-    let aaa = a.field.access;
-    let bbb = field.acces + with * some && ops;
-}
