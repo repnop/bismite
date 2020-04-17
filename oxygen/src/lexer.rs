@@ -19,13 +19,6 @@ impl Token {
     pub fn kind(&self) -> &TokenKind {
         &self.kind
     }
-
-    pub fn is_binop(&self) -> bool {
-        match self.kind() {
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Star => true,
-            _ => false,
-        }
-    }
 }
 
 #[derive(Logos, Clone, Debug, PartialEq)]
@@ -64,6 +57,8 @@ pub enum TokenKind {
     Eq,
     #[token = ":"]
     Colon,
+    #[token = "."]
+    Period,
 
     // Keywords
     #[token = "fn"]
@@ -91,4 +86,13 @@ pub enum TokenKind {
 
     #[regex = "[\n\r\t]+"]
     Whitespace,
+}
+
+impl TokenKind {
+    pub fn is_binop(&self) -> bool {
+        match self {
+            TokenKind::Plus | TokenKind::Minus | TokenKind::Star => true,
+            _ => false,
+        }
+    }
 }

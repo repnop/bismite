@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 oxygen = { path = "../oxygen" }
+rustyline = "6.1.1"

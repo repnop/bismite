@@ -50,12 +50,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn statement_or_expression(&mut self) -> Result<Either<Statement, Expression>> {
-        let peek2 = self.peek2().map(|t| t.kind);
         match self.peek()?.kind {
             TokenKind::Let => Ok(Either::Left(self.statement()?)),
-            TokenKind::Identifier(_) if peek2 == Ok(TokenKind::Eq) => {
-                Ok(Either::Left(self.statement()?))
-            }
             _ => {
                 let expr = self.expression()?;
 
@@ -70,12 +66,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn statement(&mut self) -> Result<Statement> {
-        let peek2 = self.peek2()?.kind;
         match self.peek()?.kind {
             TokenKind::Let => Ok(Statement::VariableBinding(self.variable_binding()?)),
-            TokenKind::Identifier(_) if peek2 == TokenKind::Eq => {
-                Ok(Statement::Assignment(self.assignment()?))
-            }
             TokenKind::Identifier(_) => {
                 let expr = self.expression()?;
                 self.eat(TokenKind::Semicolon)?;
@@ -87,7 +79,7 @@ impl<'a> Parser<'a> {
 
     pub fn variable_binding(&mut self) -> Result<VariableBinding> {
         let let_span = self.eat(TokenKind::Let)?;
-        let name = self.identifier()?.0;
+        let name = self.identifier()?;
         self.eat(TokenKind::Colon)?;
         let ty = self.ty()?;
         self.eat(TokenKind::Eq)?;
@@ -99,19 +91,6 @@ impl<'a> Parser<'a> {
             ty,
             value,
             span: let_span.merge(end),
-        })
-    }
-
-    pub fn assignment(&mut self) -> Result<Assignment> {
-        let (ident, start_span) = self.identifier()?;
-        self.eat(TokenKind::Eq)?;
-        let value = self.expression()?;
-        let end_span = self.eat(TokenKind::Semicolon)?;
-
-        Ok(Assignment {
-            ident,
-            value,
-            span: start_span.merge(end_span),
         })
     }
 
@@ -127,41 +106,67 @@ impl<'a> Parser<'a> {
                 return Ok(primary);
             }
 
-            if self.peek()?.is_binop() {
-                let binop = self.binop()?;
+            match self.peek()?.kind {
+                t if t.is_binop() => {
+                    let binop = self.binop()?;
 
-                if matches!(curr_binop, Some(curr) if curr != binop) {
-                    return Err(ParseError::BadBinOp);
-                }
-
-                let rhs = self.parse_primary_expr()?;
-                let span = primary.span.merge(rhs.span);
-
-                primary = Expression {
-                    kind: ExpressionKind::BinaryOperation(Box::new(primary), binop, Box::new(rhs)),
-                    span,
-                };
-            } else if self.peek()?.kind == TokenKind::LeftParen {
-                let mut exprs = Vec::new();
-                self.eat(TokenKind::LeftParen)?;
-
-                while self.peek()?.kind != TokenKind::RightParen {
-                    exprs.push(self.expression()?);
-
-                    if self.peek()?.kind == TokenKind::Comma {
-                        self.eat(TokenKind::Comma)?;
+                    if matches!(curr_binop, Some(curr) if curr != binop) {
+                        return Err(ParseError::BadBinOp);
                     }
+
+                    let rhs = self.parse_primary_expr()?;
+                    let span = primary.span.merge(rhs.span);
+
+                    primary = Expression {
+                        kind: ExpressionKind::BinaryOperation(
+                            Box::new(primary),
+                            binop,
+                            Box::new(rhs),
+                        ),
+                        span,
+                    };
                 }
+                TokenKind::Period => {
+                    self.eat(TokenKind::Period)?;
+                    let ident = self.identifier()?;
+                    let span = primary.span.merge(ident.span);
 
-                let end_span = self.eat(TokenKind::RightParen)?;
-                let start_span = primary.span;
+                    primary = Expression {
+                        kind: ExpressionKind::FieldAccess(Box::new(primary), ident),
+                        span,
+                    };
+                }
+                TokenKind::Eq => {
+                    self.eat(TokenKind::Eq)?;
+                    let rhs = self.expression()?;
+                    let span = primary.span.merge(rhs.span);
 
-                primary = Expression {
-                    kind: ExpressionKind::FnCall(Box::new(primary), exprs),
-                    span: start_span.merge(end_span),
-                };
-            } else {
-                return Ok(primary);
+                    return Ok(Expression {
+                        kind: ExpressionKind::Assignment(Box::new(primary), Box::new(rhs)),
+                        span,
+                    });
+                }
+                TokenKind::LeftParen => {
+                    let mut exprs = Vec::new();
+                    self.eat(TokenKind::LeftParen)?;
+
+                    while self.peek()?.kind != TokenKind::RightParen {
+                        exprs.push(self.expression()?);
+
+                        if self.peek()?.kind == TokenKind::Comma {
+                            self.eat(TokenKind::Comma)?;
+                        }
+                    }
+
+                    let end_span = self.eat(TokenKind::RightParen)?;
+                    let start_span = primary.span;
+
+                    primary = Expression {
+                        kind: ExpressionKind::FnCall(Box::new(primary), exprs),
+                        span: start_span.merge(end_span),
+                    };
+                }
+                _ => return Ok(primary),
             }
         }
     }
@@ -202,12 +207,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn identifier(&mut self) -> Result<(String, Span)> {
+    pub fn identifier(&mut self) -> Result<Identifier> {
         let token = self.token()?;
         let span = token.span();
 
         match token.kind {
-            TokenKind::Identifier(s) => Ok((s, span)),
+            TokenKind::Identifier(value) => Ok(Identifier { value, span }),
             _ => Err(ParseError::BadToken(token)),
         }
     }

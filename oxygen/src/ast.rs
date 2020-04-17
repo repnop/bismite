@@ -9,21 +9,13 @@ pub enum AstNode {
 #[derive(Debug)]
 pub enum Statement {
     VariableBinding(VariableBinding),
-    Assignment(Assignment),
     Expression(Expression),
 }
 
 #[derive(Debug)]
 pub struct VariableBinding {
-    pub name: String,
+    pub name: Identifier,
     pub ty: Type,
-    pub value: Expression,
-    pub span: Span,
-}
-
-#[derive(Debug)]
-pub struct Assignment {
-    pub ident: String,
     pub value: Expression,
     pub span: Span,
 }
@@ -36,11 +28,19 @@ pub struct Expression {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
-    Integer(i128),
-    Identifier(String),
+    Assignment(Box<Expression>, Box<Expression>),
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
+    FieldAccess(Box<Expression>, Identifier),
     FnCall(Box<Expression>, Vec<Expression>),
-    Unary(),
+    Identifier(String),
+    Integer(i128),
+    Unary(UnaryOp, Box<Expression>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Identifier {
+    pub value: String,
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -50,6 +50,7 @@ pub enum BinOp {
     Mult,
 }
 
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Minus,
 }
