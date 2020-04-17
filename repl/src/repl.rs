@@ -115,11 +115,8 @@ impl Repl {
     }
 
     fn eval_repl_command(&mut self, s: &str) -> bool {
-        use std::io::Write;
-
         if s.trim() == ".clear" {
-            print!("\x1B[2J\x1B[H");
-            std::io::stdout().flush().unwrap();
+            println!("\x1B[2J\x1B[H");
             self.code.clear();
 
             true
