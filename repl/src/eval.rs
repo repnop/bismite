@@ -42,6 +42,10 @@ impl Environment {
                             kind: ExpressionKind::Integer(i1 * i2),
                             span: expr.span,
                         },
+                        BinOp::Divide => Expression {
+                            kind: ExpressionKind::Integer(i1 / i2),
+                            span: expr.span,
+                        },
                     },
                     _ => todo!(),
                 }

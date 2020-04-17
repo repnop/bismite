@@ -269,6 +269,7 @@ impl<'a> Parser<'a> {
             TokenKind::Plus => Ok(BinOp::Plus),
             TokenKind::Minus => Ok(BinOp::Minus),
             TokenKind::Star => Ok(BinOp::Mult),
+            TokenKind::Slash => Ok(BinOp::Divide),
             _ => Err(ParseError::BadToken(token)),
         }
     }

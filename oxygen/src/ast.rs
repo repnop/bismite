@@ -48,6 +48,7 @@ pub enum BinOp {
     Plus,
     Minus,
     Mult,
+    Divide,
 }
 
 #[derive(Debug, Clone)]
