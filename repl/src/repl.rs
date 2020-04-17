@@ -65,8 +65,11 @@ impl Repl {
         }
 
         self.code += &line;
+        self.code += "\n";
 
+        let old_code = self.code.clone();
         let eval_mode = self.eval_mode();
+
         let mut parser = Parser::new(&self.code);
         let mut nodes = Vec::new();
         let mut hit_expr = false;
@@ -75,12 +78,13 @@ impl Repl {
             let node = parser.guess();
 
             if let Err(ParseError::Eof) = &node {
+                self.code = old_code;
                 self.prompt_mode = PromptMode::Continuing;
                 return None;
             }
 
             if hit_expr && matches!(&node, Ok(Some(AstNode::Expression(_)))) {
-                self.code.clear();
+                self.reset();
                 return Some("Error: Can only eval one expression per line".into());
             }
 
@@ -91,14 +95,13 @@ impl Repl {
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    self.code.clear();
+                    self.reset();
                     return Some(format!("{:?}", e));
                 }
             }
         }
 
         let mut eval_output = None;
-
         for node in nodes {
             match eval_mode {
                 EvalMode::Eval => eval_output = self.environment.eval(node),
@@ -106,8 +109,7 @@ impl Repl {
             }
         }
 
-        self.code.clear();
-        self.prompt_mode = PromptMode::Fresh;
+        self.reset();
 
         eval_output
     }
@@ -142,6 +144,11 @@ impl Repl {
         } else {
             EvalMode::Eval
         }
+    }
+
+    fn reset(&mut self) {
+        self.code.clear();
+        self.prompt_mode = PromptMode::Fresh;
     }
 
     fn read_line(&mut self, mode: PromptMode) -> LineReturn {
