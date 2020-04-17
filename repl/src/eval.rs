@@ -17,7 +17,7 @@ impl Environment {
                 self.eval_expr(e);
                 None
             }
-            _ => Some(format!("Not supported yet!")),
+            _ => Some("Not supported yet!".to_string()),
         }
     }
 

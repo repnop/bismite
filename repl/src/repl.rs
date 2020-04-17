@@ -106,6 +106,7 @@ impl Repl {
             }
         }
 
+        self.code.clear();
         self.prompt_mode = PromptMode::Fresh;
 
         eval_output
