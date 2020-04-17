@@ -106,6 +106,8 @@ impl Repl {
             }
         }
 
+        self.prompt_mode = PromptMode::Fresh;
+
         eval_output
     }
 
@@ -118,14 +120,23 @@ impl Repl {
             self.code.clear();
 
             true
+        } else if s.trim() == ".help" {
+            println!(
+                r"Commands:
+    .help   Displays this help text
+    .ast    Display the following code as its AST form
+    .clear  Clear the current screen"
+            );
+
+            true
         } else {
             false
         }
     }
 
     fn eval_mode(&mut self) -> EvalMode {
-        if self.code.starts_with(".ast:") {
-            self.code = self.code.trim_start_matches(".ast:").to_string();
+        if self.code.starts_with(".ast") {
+            self.code = self.code.trim_start_matches(".ast").to_string();
             EvalMode::Ast
         } else {
             EvalMode::Eval
