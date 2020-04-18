@@ -14,8 +14,9 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub struct VariableBinding {
+    pub mutable: bool,
     pub name: Identifier,
-    pub ty: Type,
+    pub ty: Option<Type>,
     pub value: Expression,
     pub span: Span,
 }
@@ -32,9 +33,10 @@ pub enum ExpressionKind {
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
     FieldAccess(Box<Expression>, Identifier),
     FnCall(Box<Expression>, Vec<Expression>),
-    Identifier(String),
+    Identifier(Identifier),
     Integer(i128),
     Unary(UnaryOp, Box<Expression>),
+    Unit,
 }
 
 #[derive(Debug, Clone)]

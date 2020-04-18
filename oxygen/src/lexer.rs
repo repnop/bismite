@@ -73,6 +73,8 @@ pub enum TokenKind {
     Let,
     #[token = "use"]
     Use,
+    #[token = "mut"]
+    Mut,
 
     #[token = "\""]
     DoubleQuote,

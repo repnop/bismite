@@ -118,20 +118,38 @@ impl Repl {
         if s.trim() == ".clear" {
             println!("\x1B[2J\x1B[H");
             self.code.clear();
-
-            true
         } else if s.trim() == ".help" {
             println!(
                 r"Commands:
-    .help   Displays this help text
-    .ast    Display the following code as its AST form
-    .clear  Clear the current screen"
+    .help                       Displays this help text
+    .ast                        Display the following code as its AST form
+    .clear                      Clear the current screen
+    .varinfo <ident>            Display the variable information associated with the given identifier"
             );
+        } else if s.starts_with(".varinfo") {
+            let ident = match s.split(' ').nth(1) {
+                Some(ident) => ident,
+                None => {
+                    println!("Must provide an identifier to .varinfo, e.g. .varinfo my_variable");
+                    return true;
+                }
+            };
+            let valid_ident = Parser::new(ident).identifier().is_ok();
 
-            true
+            if !valid_ident {
+                println!("Invalid identifier");
+                return true;
+            }
+
+            match self.environment.variable_info(ident) {
+                Some(var_info) => println!("{:?}", var_info),
+                None => println!("Variable with identifier `{}` not found in scope", ident),
+            }
         } else {
-            false
+            return false;
         }
+
+        true
     }
 
     fn eval_mode(&mut self) -> EvalMode {

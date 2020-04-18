@@ -79,14 +79,29 @@ impl<'a> Parser<'a> {
 
     pub fn variable_binding(&mut self) -> Result<VariableBinding> {
         let let_span = self.eat(TokenKind::Let)?;
+
+        let mutable = if self.peek()?.kind == TokenKind::Mut {
+            self.eat(TokenKind::Mut)?;
+            true
+        } else {
+            false
+        };
+
         let name = self.identifier()?;
-        self.eat(TokenKind::Colon)?;
-        let ty = self.ty()?;
+
+        let ty = if self.peek()?.kind == TokenKind::Colon {
+            self.eat(TokenKind::Colon)?;
+            Some(self.ty()?)
+        } else {
+            None
+        };
+
         self.eat(TokenKind::Eq)?;
         let value = self.expression()?;
         let end = self.eat(TokenKind::Semicolon)?;
 
         Ok(VariableBinding {
+            mutable,
             name,
             ty,
             value,
@@ -181,13 +196,14 @@ impl<'a> Parser<'a> {
                 span,
             }),
             TokenKind::LeftParen => {
-                let expr = self.expression()?;
-                self.eat(TokenKind::RightParen)?;
+                let mut expr = self.expression()?;
+                let end_span = self.eat(TokenKind::RightParen)?;
+                expr.span = span.merge(end_span);
 
                 Ok(expr)
             }
-            TokenKind::Identifier(i) => Ok(Expression {
-                kind: ExpressionKind::Identifier(i),
+            TokenKind::Identifier(value) => Ok(Expression {
+                kind: ExpressionKind::Identifier(Identifier { value, span }),
                 span,
             }),
             _ => Err(ParseError::BadToken(token)),
