@@ -1,13 +1,14 @@
 use aster::{AstNode, BinOp, Expression, ExpressionKind, Statement};
+use codespan::Span;
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum EvalError {
-    IncompatibleTypes,
+    IncompatibleTypes(Span, Span),
     NotImplementedYet(&'static str),
-    NotValidAssignee,
-    VariableNotFound,
-    VariableNotAssignable,
+    NotValidAssignee(Span),
+    VariableNotFound(Span),
+    VariableNotAssignable(Span),
 }
 
 pub struct Environment {
@@ -25,22 +26,15 @@ impl Environment {
         self.variables.get(ident)
     }
 
-    pub fn eval(&mut self, node: AstNode) -> Option<String> {
-        match node {
+    pub fn eval(&mut self, node: AstNode) -> Result<Option<String>, EvalError> {
+        Ok(match node {
             AstNode::Expression(e) => {
-                let res = self.eval_expr(e);
-                Some(match res {
-                    Ok(res) => format!("{:?}", res),
-                    Err(res) => format!("{:?}", res),
-                })
+                let res = self.eval_expr(e)?;
+                Some(format!("{:?}", res))
             }
-            AstNode::Statement(stmt) => match self.eval_stmt(stmt) {
-                Ok(_) => None,
-                Err(e) => Some(format!("{:?}", e)),
-            },
-            #[allow(unreachable_patterns)]
-            _ => Some("Not supported yet!".to_string()),
-        }
+            AstNode::Statement(stmt) => self.eval_stmt(stmt).map(|_| None)?,
+            _ => return Err(EvalError::NotImplementedYet("whatever you typed")),
+        })
     }
 
     fn eval_expr(&mut self, expr: Expression) -> Result<Expression, EvalError> {
@@ -56,7 +50,7 @@ impl Environment {
                     #[allow(unreachable_patterns)]
                     _ => Err(EvalError::NotImplementedYet("types to exprs")),
                 },
-                None => Err(EvalError::VariableNotFound),
+                None => Err(EvalError::VariableNotFound(ident.span)),
             },
             ExpressionKind::BinaryOperation(e1, op, e2) => {
                 let e1 = self.eval_expr(*e1)?;
@@ -85,6 +79,7 @@ impl Environment {
                 }
             }
             ExpressionKind::Assignment(e1, e2) => {
+                let e2_span = e2.span;
                 let e2 = self.eval_expr(*e2)?;
 
                 match e1.kind {
@@ -99,14 +94,14 @@ impl Environment {
                                             span: expr_span,
                                         })
                                     }
-                                    _ => Err(EvalError::IncompatibleTypes),
+                                    _ => Err(EvalError::IncompatibleTypes(e1.span, e2_span)),
                                 },
-                                false => Err(EvalError::VariableNotAssignable),
+                                false => Err(EvalError::VariableNotAssignable(ident.span)),
                             },
-                            None => Err(EvalError::VariableNotFound),
+                            None => Err(EvalError::VariableNotFound(ident.span)),
                         }
                     }
-                    _ => Err(EvalError::NotValidAssignee),
+                    _ => Err(EvalError::NotValidAssignee(e1.span)),
                 }
             }
             _ => Err(EvalError::NotImplementedYet("non-binary-op exprs")),

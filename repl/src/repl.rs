@@ -1,4 +1,4 @@
-use crate::eval::Environment;
+use crate::eval::{Environment, EvalError};
 use aster::AstNode;
 use oxygen::{ParseError, Parser};
 use rustyline::{error::ReadlineError, hint::HistoryHinter, CompletionType, Config, Editor};
@@ -30,8 +30,20 @@ impl PromptMode {
     }
 }
 
-pub enum ReplError {
-    ParseError(String, ParseError),
+pub struct ReplError {
+    pub source: String,
+    pub kind: ReplErrorKind,
+}
+
+impl ReplError {
+    pub fn new(source: String, kind: ReplErrorKind) -> Self {
+        Self { source, kind }
+    }
+}
+
+pub enum ReplErrorKind {
+    EvalError(EvalError),
+    ParseError(ParseError),
     MultiExpression,
     Readline(rustyline::error::ReadlineError),
 }
@@ -63,7 +75,9 @@ impl Repl {
         let line = match self.read_line(self.prompt_mode) {
             LineReturn::Done(s) => s,
             LineReturn::Empty => std::process::exit(0),
-            LineReturn::Error(e) => return Err(ReplError::Readline(e)),
+            LineReturn::Error(e) => {
+                return Err(ReplError::new(String::new(), ReplErrorKind::Readline(e)))
+            }
         };
 
         self.editor.add_history_entry(&*line);
@@ -91,8 +105,9 @@ impl Repl {
             }
 
             if hit_expr && matches!(&node, Ok(Some(AstNode::Expression(_)))) {
+                let code = self.code.clone();
                 self.reset();
-                return Err(ReplError::MultiExpression);
+                return Err(ReplError::new(code, ReplErrorKind::MultiExpression));
             }
 
             match node {
@@ -104,7 +119,7 @@ impl Repl {
                 Err(e) => {
                     let code = self.code.clone();
                     self.reset();
-                    return Err(ReplError::ParseError(code, e));
+                    return Err(ReplError::new(code, ReplErrorKind::ParseError(e)));
                 }
             }
         }
@@ -112,11 +127,20 @@ impl Repl {
         let mut eval_output = None;
         for node in nodes {
             match eval_mode {
-                EvalMode::Eval => eval_output = self.environment.eval(node),
+                EvalMode::Eval => {
+                    let out = match self.environment.eval(node) {
+                        Ok(out) => out,
+                        Err(e) => {
+                            let code = self.code.clone();
+                            self.reset();
+                            return Err(ReplError::new(code, ReplErrorKind::EvalError(e)));
+                        }
+                    };
+                    eval_output = out;
+                }
                 EvalMode::Ast => eval_output = Some(format!("{:#?}", node)),
             }
         }
-
         self.reset();
 
         Ok(eval_output)
