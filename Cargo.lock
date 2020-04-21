@@ -13,6 +13,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 
 [[package]]
+name = "aster"
+version = "0.1.0"
+dependencies = [
+ "codespan",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -124,6 +131,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 
 [[package]]
+name = "gamma"
+version = "0.1.0"
+dependencies = [
+ "codespan",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -157,18 +171,18 @@ dependencies = [
 
 [[package]]
 name = "logos"
-version = "0.11.0-rc5"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "654a71e4f70e5c73d489ea5bfc3226d6b99cda9ba4b3b5ee1c68b985fe698987"
+checksum = "42718f9e929c97a875b305f7bd411f7dfc5777ee4a9904aa9c765f25701b7c4c"
 dependencies = [
  "logos-derive",
 ]
 
 [[package]]
 name = "logos-derive"
-version = "0.11.0-rc5"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6c29831dcaff67c9ad526da0bdb83f332bae9bb585b49892bd09eda88dcddad"
+checksum = "93ea1beb72d3e0928e729e8795186b9a4ed607a72765bcf8093800ef7c0d5fc0"
 dependencies = [
  "beef",
  "fnv",
@@ -202,9 +216,9 @@ dependencies = [
 name = "oxygen"
 version = "0.1.0"
 dependencies = [
+ "aster",
  "codespan",
  "logos",
- "string-interner",
 ]
 
 [[package]]
@@ -252,6 +266,9 @@ checksum = "7fe5bd57d1d7414c6b5ed48563a2c855d995ff777729dcd91c369ec7fea395ae"
 name = "repl"
 version = "0.1.0"
 dependencies = [
+ "aster",
+ "codespan",
+ "codespan-reporting",
  "oxygen",
  "rustyline",
 ]
@@ -287,23 +304,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde"
-version = "1.0.106"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36df6ac6412072f67cf767ebbde4133a5b2e88e76dc6187fa7104cd16f783399"
-
-[[package]]
 name = "strcache"
 version = "0.1.0"
-
-[[package]]
-name = "string-interner"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd710eadff449a1531351b0e43eb81ea404336fa2f56c777427ab0e32a4cf183"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "syn"

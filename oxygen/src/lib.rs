@@ -1,9 +1,8 @@
-pub mod ast;
 mod lexer;
 
 pub use lexer::{Token, TokenKind};
 
-use ast::*;
+use aster::*;
 use codespan::Span;
 use logos::Lexer;
 use std::collections::VecDeque;
@@ -18,9 +17,11 @@ pub enum Either<T, U> {
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     Eof,
-    BadToken(Token),
+    BadToken {
+        got: Token,
+        expected: Vec<&'static str>,
+    },
     BadBinOp,
-    Fucc,
 }
 
 pub struct Parser<'a> {
@@ -42,11 +43,122 @@ impl<'a> Parser<'a> {
         }
 
         match self.peek()?.kind {
+            TokenKind::Fn | TokenKind::Struct => Ok(Some(AstNode::Item(self.item()?))),
             _ => match self.statement_or_expression()? {
                 Either::Left(stmt) => Ok(Some(AstNode::Statement(stmt))),
                 Either::Right(expr) => Ok(Some(AstNode::Expression(expr))),
             },
         }
+    }
+
+    pub fn item(&mut self) -> Result<Item> {
+        match self.peek()?.kind {
+            TokenKind::Fn => Ok(Item::Function(self.function()?)),
+            TokenKind::Struct => Ok(Item::Struct(self.r#struct()?)),
+            _ => Err(ParseError::BadToken {
+                got: self.peek()?,
+                expected: vec!["fn", "struct"],
+            }),
+        }
+    }
+
+    pub fn function(&mut self) -> Result<Function> {
+        let start_span = self.eat(TokenKind::Fn)?;
+        let name = self.identifier()?;
+
+        self.eat(TokenKind::LeftParen)?;
+
+        let parameters = self.type_instance_list(TokenKind::RightParen)?;
+        self.eat(TokenKind::RightParen)?;
+
+        let return_ty = if self.peek()?.kind == TokenKind::ThinArrow {
+            self.eat(TokenKind::ThinArrow)?;
+
+            Some(self.ty()?)
+        } else {
+            None
+        };
+
+        let body = self.block()?;
+        let span = start_span.merge(body.span);
+
+        Ok(Function {
+            name,
+            parameters,
+            return_ty,
+            body,
+            span,
+        })
+    }
+
+    pub fn r#struct(&mut self) -> Result<Struct> {
+        let start_span = self.eat(TokenKind::Struct)?;
+        let name = self.identifier()?;
+        self.eat(TokenKind::LeftBrace)?;
+        let members = self.type_instance_list(TokenKind::RightBrace)?;
+        let end_span = self.eat(TokenKind::RightBrace)?;
+        let span = start_span.merge(end_span);
+
+        Ok(Struct {
+            name,
+            members,
+            span,
+        })
+    }
+
+    pub fn type_instance(&mut self) -> Result<TypeInstance> {
+        let name = self.identifier()?;
+        self.eat(TokenKind::Colon)?;
+        let ty = self.ty()?;
+        let span = name.span.merge(ty.span);
+
+        Ok(TypeInstance { name, ty, span })
+    }
+
+    /// Note: does not consume the delimiter
+    pub fn type_instance_list(&mut self, delimiter: TokenKind) -> Result<Vec<TypeInstance>> {
+        let mut type_instances = Vec::new();
+
+        while self.peek()?.kind != delimiter {
+            type_instances.push(self.type_instance()?);
+
+            if self.peek()?.kind == TokenKind::Comma {
+                self.eat(TokenKind::Comma)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(type_instances)
+    }
+
+    pub fn block(&mut self) -> Result<Block> {
+        let start_span = self.eat(TokenKind::LeftBrace)?;
+
+        let mut items = Vec::new();
+        let mut statements = Vec::new();
+        let mut return_expr = None;
+
+        while self.peek()?.kind != TokenKind::RightBrace {
+            match self.peek()?.kind {
+                TokenKind::Fn | TokenKind::Struct => items.push(self.item()?),
+                _ => match self.statement_or_expression()? {
+                    Either::Left(stmt) => statements.push(stmt),
+                    Either::Right(expr) if return_expr.is_none() => return_expr = Some(expr),
+                    _ => break,
+                },
+            }
+        }
+
+        let end_span = self.eat(TokenKind::RightBrace)?;
+        let span = start_span.merge(end_span);
+
+        Ok(Block {
+            items,
+            statements,
+            return_expr,
+            span,
+        })
     }
 
     pub fn statement_or_expression(&mut self) -> Result<Either<Statement, Expression>> {
@@ -170,6 +282,8 @@ impl<'a> Parser<'a> {
 
                         if self.peek()?.kind == TokenKind::Comma {
                             self.eat(TokenKind::Comma)?;
+                        } else {
+                            break;
                         }
                     }
 
@@ -187,26 +301,45 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expression> {
-        let token = self.token()?;
-        let span = token.span();
+        let peek = self.peek()?;
+        let span = peek.span();
 
-        match token.kind {
-            TokenKind::Integer(n) => Ok(Expression {
-                kind: ExpressionKind::Integer(n),
-                span,
-            }),
+        match peek.kind {
+            TokenKind::Integer(n) => {
+                self.eat(TokenKind::Integer(n))?;
+
+                Ok(Expression {
+                    kind: ExpressionKind::Integer(n),
+                    span,
+                })
+            }
             TokenKind::LeftParen => {
+                let start_span = self.eat(TokenKind::LeftParen)?;
                 let mut expr = self.expression()?;
                 let end_span = self.eat(TokenKind::RightParen)?;
-                expr.span = span.merge(end_span);
+                expr.span = start_span.merge(end_span);
 
                 Ok(expr)
             }
-            TokenKind::Identifier(value) => Ok(Expression {
-                kind: ExpressionKind::Identifier(Identifier { value, span }),
-                span,
+            TokenKind::Identifier(value) => {
+                self.token()?;
+                Ok(Expression {
+                    kind: ExpressionKind::Identifier(Identifier { value, span }),
+                    span,
+                })
+            }
+            TokenKind::LeftBrace => {
+                let block = self.block()?;
+                let span = block.span;
+                Ok(Expression {
+                    kind: ExpressionKind::Block(Box::new(block)),
+                    span,
+                })
+            }
+            _ => Err(ParseError::BadToken {
+                got: peek,
+                expected: vec!["expression"],
             }),
-            _ => Err(ParseError::BadToken(token)),
         }
     }
 
@@ -219,7 +352,10 @@ impl<'a> Parser<'a> {
                 kind: TypeKind::Named(s),
                 span,
             }),
-            _ => Err(ParseError::Fucc),
+            _ => Err(ParseError::BadToken {
+                got: token,
+                expected: vec!["type"],
+            }),
         }
     }
 
@@ -229,7 +365,10 @@ impl<'a> Parser<'a> {
 
         match token.kind {
             TokenKind::Identifier(value) => Ok(Identifier { value, span }),
-            _ => Err(ParseError::BadToken(token)),
+            _ => Err(ParseError::BadToken {
+                got: token,
+                expected: vec!["identifier"],
+            }),
         }
     }
 
@@ -239,7 +378,10 @@ impl<'a> Parser<'a> {
         if token.kind() == &kind {
             Ok(token.span())
         } else {
-            Err(ParseError::Fucc)
+            Err(ParseError::BadToken {
+                got: token,
+                expected: vec![kind.as_str()],
+            })
         }
     }
 
@@ -286,7 +428,10 @@ impl<'a> Parser<'a> {
             TokenKind::Minus => Ok(BinOp::Minus),
             TokenKind::Star => Ok(BinOp::Mult),
             TokenKind::Slash => Ok(BinOp::Divide),
-            _ => Err(ParseError::BadToken(token)),
+            _ => Err(ParseError::BadToken {
+                got: token,
+                expected: vec!["binary operator"],
+            }),
         }
     }
 

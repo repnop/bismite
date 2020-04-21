@@ -1,5 +1,6 @@
 use crate::eval::Environment;
-use oxygen::{ast::AstNode, ParseError, Parser};
+use aster::AstNode;
+use oxygen::{ParseError, Parser};
 use rustyline::{error::ReadlineError, hint::HistoryHinter, CompletionType, Config, Editor};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +30,12 @@ impl PromptMode {
     }
 }
 
+pub enum ReplError {
+    ParseError(String, ParseError),
+    MultiExpression,
+    Readline(rustyline::error::ReadlineError),
+}
+
 pub struct Repl {
     code: String,
     environment: Environment,
@@ -52,16 +59,16 @@ impl Repl {
             prompt_mode: PromptMode::Fresh,
         }
     }
-    pub fn run(&mut self) -> Option<String> {
+    pub fn run(&mut self) -> Result<Option<String>, ReplError> {
         let line = match self.read_line(self.prompt_mode) {
             LineReturn::Done(s) => s,
             LineReturn::Empty => std::process::exit(0),
-            LineReturn::Error(e) => return Some(e.to_string()),
+            LineReturn::Error(e) => return Err(ReplError::Readline(e)),
         };
 
         self.editor.add_history_entry(&*line);
         if self.eval_repl_command(&line) {
-            return None;
+            return Ok(None);
         }
 
         self.code += &line;
@@ -80,12 +87,12 @@ impl Repl {
             if let Err(ParseError::Eof) = &node {
                 self.code = old_code;
                 self.prompt_mode = PromptMode::Continuing;
-                return None;
+                return Ok(None);
             }
 
             if hit_expr && matches!(&node, Ok(Some(AstNode::Expression(_)))) {
                 self.reset();
-                return Some("Error: Can only eval one expression per line".into());
+                return Err(ReplError::MultiExpression);
             }
 
             match node {
@@ -95,8 +102,9 @@ impl Repl {
                 }
                 Ok(None) => break,
                 Err(e) => {
+                    let code = self.code.clone();
                     self.reset();
-                    return Some(format!("{:?}", e));
+                    return Err(ReplError::ParseError(code, e));
                 }
             }
         }
@@ -111,7 +119,7 @@ impl Repl {
 
         self.reset();
 
-        eval_output
+        Ok(eval_output)
     }
 
     fn eval_repl_command(&mut self, s: &str) -> bool {

@@ -21,66 +21,78 @@ impl Token {
     }
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
 #[derive(Logos, Clone, Debug, PartialEq)]
 pub enum TokenKind {
     #[error]
     Error,
 
     // Trivia
-    #[token = "("]
+    #[token("(")]
     LeftParen,
-    #[token = ")"]
+    #[token(")")]
     RightParen,
-    #[token = "["]
+    #[token("[")]
     LeftBracket,
-    #[token = "]"]
+    #[token("]")]
     RightBracket,
-    #[token = "->"]
+    #[token("->")]
     ThinArrow,
-    #[token = "=>"]
+    #[token("=>")]
     ThickArrow,
-    #[token = ","]
+    #[token(",")]
     Comma,
-    #[token = ";"]
+    #[token(";")]
     Semicolon,
-    #[token = "{"]
+    #[token("{")]
     LeftBrace,
-    #[token = "}"]
+    #[token("}")]
     RightBrace,
-    #[token = "+"]
+    #[token("+")]
     Plus,
-    #[token = "-"]
+    #[token("-")]
     Minus,
-    #[token = "*"]
+    #[token("*")]
     Star,
-    #[token = "/"]
+    #[token("/")]
     Slash,
-    #[token = "="]
+    #[token("=")]
     Eq,
-    #[token = ":"]
+    #[token(":")]
     Colon,
-    #[token = "."]
+    #[token(".")]
     Period,
 
     // Keywords
-    #[token = "fn"]
+    #[token("fn")]
     Fn,
-    #[token = "if"]
+    #[token("if")]
     If,
-    #[token = "while"]
+    #[token("while")]
     While,
-    #[token = "let"]
+    #[token("let")]
     Let,
-    #[token = "use"]
+    #[token("use")]
     Use,
-    #[token = "mut"]
+    #[token("mut")]
     Mut,
+    #[token("struct")]
+    Struct,
 
-    #[token = "\""]
+    #[token("\"")]
     DoubleQuote,
-    #[token = "'"]
+    #[token("'")]
     SingleQuote,
-    #[regex("[a-zA-Z_][a-zA-Z_0-9]*", |lex| lex.slice().to_string())]
+    #[regex(r#"(?x:
+        [\p{XID_Start}_]
+        \p{XID_Continue}*
+        (\u{3F} | \u{21} | (\u{3F}\u{21}) | \u{2048})? # ? ! ?! ⁈
+    )"#, |lex| lex.slice().to_string())]
     Identifier(String),
     #[regex("\\d+", |lex| lex.slice().parse())]
     Integer(i128),
@@ -88,7 +100,7 @@ pub enum TokenKind {
     Generic(String),
     Character(char),
 
-    #[regex = "[\n\r\t]+"]
+    #[regex("[\n\r\t ]+")]
     Whitespace,
 }
 
@@ -98,5 +110,46 @@ impl TokenKind {
             TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash => true,
             _ => false,
         }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        use TokenKind::*;
+        match self {
+            LeftParen => "(",
+            RightParen => ")",
+            LeftBracket => "[",
+            RightBracket => "]",
+            ThinArrow => "->",
+            ThickArrow => "=>",
+            Comma => ",",
+            Semicolon => ";",
+            LeftBrace => "{",
+            RightBrace => "}",
+            Plus => "+",
+            Minus => "-",
+            Star => "*",
+            Slash => "/",
+            Eq => "=",
+            Colon => ":",
+            Period => ".",
+            Fn => "fn",
+            If => "if",
+            While => "while",
+            Let => "let",
+            Use => "use",
+            Mut => "mut",
+            Struct => "struct",
+            DoubleQuote => "\"",
+            SingleQuote => "'",
+            Identifier(_) => "identifier",
+            Integer(_) => "integer",
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl std::fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }

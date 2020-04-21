@@ -1,4 +1,4 @@
-use oxygen::ast::{AstNode, BinOp, Expression, ExpressionKind, Statement};
+use aster::{AstNode, BinOp, Expression, ExpressionKind, Statement};
 use std::collections::HashMap;
 
 #[derive(Debug)]
