@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum EvalError {
-    IncompatibleTypes(Span, Span),
+    IncompatibleTypes((String, Span), (String, Span)),
     NotImplementedYet(&'static str),
     NotValidAssignee(Span),
     VariableNotFound(Span),
@@ -47,8 +47,10 @@ impl Environment {
                         kind: ExpressionKind::Integer(*i),
                         span: ident.span,
                     }),
-                    #[allow(unreachable_patterns)]
-                    _ => Err(EvalError::NotImplementedYet("types to exprs")),
+                    Type::Boolean(b) => Ok(Expression {
+                        kind: ExpressionKind::Boolean(*b),
+                        span: ident.span,
+                    }),
                 },
                 None => Err(EvalError::VariableNotFound(ident.span)),
             },
@@ -86,15 +88,18 @@ impl Environment {
                     ExpressionKind::Identifier(ident) => {
                         match self.variables.get_mut(&ident.value) {
                             Some(variable) => match variable.mutable() {
-                                true => match (&mut variable.ty, e2.kind) {
-                                    (Type::Integer(i1), ExpressionKind::Integer(i2)) => {
+                                true => match (&mut variable.ty, Type::try_from(&e2)?) {
+                                    (Type::Integer(i1), Type::Integer(i2)) => {
                                         *i1 = i2;
                                         Ok(Expression {
                                             kind: ExpressionKind::Unit,
                                             span: expr_span,
                                         })
                                     }
-                                    _ => Err(EvalError::IncompatibleTypes(e1.span, e2_span)),
+                                    (t1, t2) => Err(EvalError::IncompatibleTypes(
+                                        (t1.to_string(), e1.span),
+                                        (t2.to_string(), e2_span),
+                                    )),
                                 },
                                 false => Err(EvalError::VariableNotAssignable(ident.span)),
                             },
@@ -104,6 +109,7 @@ impl Environment {
                     _ => Err(EvalError::NotValidAssignee(e1.span)),
                 }
             }
+            ExpressionKind::Boolean(_) => Ok(expr),
             _ => Err(EvalError::NotImplementedYet("non-binary-op exprs")),
         }
     }
@@ -116,6 +122,7 @@ impl Environment {
             Statement::VariableBinding(vb) => {
                 let ty = match self.eval_expr(vb.value)?.kind {
                     ExpressionKind::Integer(i) => Type::Integer(i),
+                    ExpressionKind::Boolean(b) => Type::Boolean(b),
                     _ => return Err(EvalError::NotImplementedYet("more expr types")),
                 };
 
@@ -131,6 +138,26 @@ impl Environment {
 #[derive(Debug)]
 pub enum Type {
     Integer(i128),
+    Boolean(bool),
+}
+
+impl Type {
+    pub fn to_string(&self) -> String {
+        match self {
+            Type::Integer(_) => String::from("int"),
+            Type::Boolean(_) => String::from("bool"),
+        }
+    }
+
+    pub fn try_from(expression: &Expression) -> Result<Self, EvalError> {
+        match &expression.kind {
+            ExpressionKind::Integer(i) => Ok(Type::Integer(*i)),
+            ExpressionKind::Boolean(b) => Ok(Type::Boolean(*b)),
+            _ => Err(EvalError::NotImplementedYet(
+                "this type extraction from expr",
+            )),
+        }
+    }
 }
 
 #[derive(Debug)]

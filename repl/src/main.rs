@@ -94,13 +94,13 @@ fn main() {
                     codespan_reporting::term::emit(&mut writer.lock(), &config, &file, &diagnostic)
                         .unwrap();
                 }
-                EvalError::IncompatibleTypes(span1, span2) => {
+                EvalError::IncompatibleTypes((type1, span1), (type2, span2)) => {
                     let file = SimpleFile::new("<stdin>", source);
                     let diagnostic = Diagnostic::error()
                         .with_message("Incompatible types")
                         .with_labels(vec![
-                            Label::primary((), span1).with_message("Has type <placeholder1>"),
-                            Label::primary((), span2).with_message("Has type <placeholder2>"),
+                            Label::primary((), span1).with_message(format!("Has type {}", type1)),
+                            Label::primary((), span2).with_message(format!("Has type {}", type2)),
                         ]);
                     let writer = StandardStream::stderr(ColorChoice::Always);
                     let config = codespan_reporting::term::Config::default();

@@ -83,6 +83,11 @@ pub enum TokenKind {
     Mut,
     #[token("struct")]
     Struct,
+    // FIXME: Move to an enum when we can
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
 
     #[token("\"")]
     DoubleQuote,

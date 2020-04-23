@@ -336,6 +336,20 @@ impl<'a> Parser<'a> {
                     span,
                 })
             }
+            b @ TokenKind::True | b @ TokenKind::False => {
+                let value = match &b {
+                    TokenKind::True => true,
+                    TokenKind::False => false,
+                    _ => unreachable!(),
+                };
+
+                self.eat(b)?;
+
+                Ok(Expression {
+                    kind: ExpressionKind::Boolean(value),
+                    span,
+                })
+            }
             _ => Err(ParseError::BadToken {
                 got: peek,
                 expected: vec!["expression"],

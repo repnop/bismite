@@ -63,6 +63,7 @@ impl Repl {
                 .build(),
         );
         editor.set_helper(Some(Helper::new()));
+        let _ = editor.load_history("repl_history.bismite");
 
         Self {
             code: String::new(),
@@ -74,7 +75,10 @@ impl Repl {
     pub fn run(&mut self) -> Result<Option<String>, ReplError> {
         let line = match self.read_line(self.prompt_mode) {
             LineReturn::Done(s) => s,
-            LineReturn::Empty => std::process::exit(0),
+            LineReturn::Empty => {
+                let _ = self.editor.save_history("repl_history.bismite");
+                std::process::exit(0)
+            }
             LineReturn::Error(e) => {
                 return Err(ReplError::new(String::new(), ReplErrorKind::Readline(e)))
             }

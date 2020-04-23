@@ -70,6 +70,7 @@ pub enum ExpressionKind {
     Assignment(Box<Expression>, Box<Expression>),
     Block(Box<Block>),
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
+    Boolean(bool),
     FieldAccess(Box<Expression>, Identifier),
     FnCall(Box<Expression>, Vec<Expression>),
     Identifier(Identifier),
