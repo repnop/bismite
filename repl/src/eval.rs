@@ -9,6 +9,7 @@ pub enum EvalError {
     NotValidAssignee(Span),
     VariableNotFound(Span),
     VariableNotAssignable(Span),
+    Multiple(Vec<EvalError>),
 }
 
 pub struct Environment {
@@ -87,22 +88,34 @@ impl Environment {
                 match e1.kind {
                     ExpressionKind::Identifier(ident) => {
                         match self.variables.get_mut(&ident.value) {
-                            Some(variable) => match variable.mutable() {
-                                true => match (&mut variable.ty, Type::try_from(&e2)?) {
-                                    (t1, t2) if t1.same_kind(&t2) => {
-                                        *t1 = t2;
-                                        Ok(Expression {
-                                            kind: ExpressionKind::Unit,
-                                            span: expr_span,
-                                        })
+                            Some(variable) => {
+                                let t2 = Type::try_from(&e2)?;
+                                match variable.mutable() {
+                                    true => match (&mut variable.ty, t2) {
+                                        (t1, t2) if t1.same_kind(&t2) => {
+                                            *t1 = t2;
+                                            Ok(Expression {
+                                                kind: ExpressionKind::Unit,
+                                                span: expr_span,
+                                            })
+                                        }
+                                        (t1, t2) => Err(EvalError::IncompatibleTypes(
+                                            (t1.to_string(), e1.span),
+                                            (t2.to_string(), e2_span),
+                                        )),
+                                    },
+                                    false if variable.ty().same_kind(&t2) => {
+                                        Err(EvalError::VariableNotAssignable(ident.span))
                                     }
-                                    (t1, t2) => Err(EvalError::IncompatibleTypes(
-                                        (t1.to_string(), e1.span),
-                                        (t2.to_string(), e2_span),
-                                    )),
-                                },
-                                false => Err(EvalError::VariableNotAssignable(ident.span)),
-                            },
+                                    false => Err(EvalError::Multiple(vec![
+                                        EvalError::VariableNotAssignable(ident.span),
+                                        EvalError::IncompatibleTypes(
+                                            (variable.ty().to_string(), e1.span),
+                                            (t2.to_string(), e2_span),
+                                        ),
+                                    ])),
+                                }
+                            }
                             None => Err(EvalError::VariableNotFound(ident.span)),
                         }
                     }
