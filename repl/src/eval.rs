@@ -89,8 +89,8 @@ impl Environment {
                         match self.variables.get_mut(&ident.value) {
                             Some(variable) => match variable.mutable() {
                                 true => match (&mut variable.ty, Type::try_from(&e2)?) {
-                                    (Type::Integer(i1), Type::Integer(i2)) => {
-                                        *i1 = i2;
+                                    (t1, t2) if t1.same_kind(&t2) => {
+                                        *t1 = t2;
                                         Ok(Expression {
                                             kind: ExpressionKind::Unit,
                                             span: expr_span,
@@ -146,6 +146,14 @@ impl Type {
         match self {
             Type::Integer(_) => String::from("int"),
             Type::Boolean(_) => String::from("bool"),
+        }
+    }
+
+    pub fn same_kind(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::Integer(_), Type::Integer(_)) => true,
+            (Type::Boolean(_), Type::Boolean(_)) => true,
+            _ => false,
         }
     }
 
