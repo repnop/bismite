@@ -134,7 +134,9 @@ checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 name = "gamma"
 version = "0.1.0"
 dependencies = [
+ "aster",
  "codespan",
+ "string-interner",
 ]
 
 [[package]]
@@ -304,8 +306,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde"
+version = "1.0.106"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36df6ac6412072f67cf767ebbde4133a5b2e88e76dc6187fa7104cd16f783399"
+
+[[package]]
 name = "strcache"
 version = "0.1.0"
+
+[[package]]
+name = "string-interner"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd710eadff449a1531351b0e43eb81ea404336fa2f56c777427ab0e32a4cf183"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "syn"

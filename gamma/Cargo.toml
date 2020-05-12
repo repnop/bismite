@@ -7,4 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+aster = { path = "../aster" }
 codespan = "0.9.2"
+string-interner = "0.7.1"

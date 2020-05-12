@@ -83,6 +83,8 @@ pub enum TokenKind {
     Mut,
     #[token("struct")]
     Struct,
+    #[token("module")]
+    Module,
     // FIXME: Move to an enum when we can
     #[token("true")]
     True,
@@ -144,11 +146,14 @@ impl TokenKind {
             Use => "use",
             Mut => "mut",
             Struct => "struct",
+            Module => "module",
+            True => "true",
+            False => "false",
             DoubleQuote => "\"",
             SingleQuote => "'",
             Identifier(_) => "identifier",
             Integer(_) => "integer",
-            _ => unreachable!(),
+            Error | Generic(_) | Character(_) | Whitespace => unreachable!(),
         }
     }
 }

@@ -1,4 +1,20 @@
+mod visit;
+
 use codespan::Span;
+pub use visit::Visitor;
+
+#[derive(Clone, Debug)]
+pub struct Geode {
+    pub module: Module,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct Module {
+    pub name: Identifier,
+    pub items: Vec<Item>,
+    pub span: Span,
+}
 
 #[derive(Clone, Debug)]
 pub enum AstNode {
@@ -11,6 +27,17 @@ pub enum AstNode {
 pub enum Item {
     Function(Function),
     Struct(Struct),
+    Module(Module),
+}
+
+impl Item {
+    pub fn span(&self) -> Span {
+        match self {
+            Item::Function(f) => f.span,
+            Item::Struct(s) => s.span,
+            Item::Module(m) => m.span,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -83,6 +110,15 @@ pub enum ExpressionKind {
 pub struct Identifier {
     pub value: String,
     pub span: Span,
+}
+
+impl Identifier {
+    pub fn dummy() -> Self {
+        Self {
+            value: String::new(),
+            span: Span::new(0, 0),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

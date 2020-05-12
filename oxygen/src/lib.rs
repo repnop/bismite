@@ -1,3 +1,5 @@
+#![allow(clippy::match_bool)]
+
 mod lexer;
 
 pub use lexer::{Token, TokenKind};
@@ -43,7 +45,9 @@ impl<'a> Parser<'a> {
         }
 
         match self.peek()?.kind {
-            TokenKind::Fn | TokenKind::Struct => Ok(Some(AstNode::Item(self.item()?))),
+            TokenKind::Fn | TokenKind::Struct | TokenKind::Module => {
+                Ok(Some(AstNode::Item(self.item()?)))
+            }
             _ => match self.statement_or_expression()? {
                 Either::Left(stmt) => Ok(Some(AstNode::Statement(stmt))),
                 Either::Right(expr) => Ok(Some(AstNode::Expression(expr))),
@@ -51,10 +55,67 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn geode(&mut self) -> Result<Geode> {
+        let module = self.module(true)?;
+        let span = module.span;
+
+        Ok(Geode { module, span })
+    }
+
+    pub fn module(&mut self, implicit: bool) -> Result<Module> {
+        let (start_span, name) = match implicit {
+            true => match self.peek() {
+                Ok(token) => (token.span(), Identifier::dummy()),
+                Err(ParseError::Eof) => {
+                    return Ok(Module {
+                        name: Identifier::dummy(),
+                        items: Vec::new(),
+                        span: Span::new(0, 0),
+                    })
+                }
+                Err(e) => return Err(e),
+            },
+            false => {
+                let start = self.eat(TokenKind::Module)?;
+                let name = self.identifier()?;
+                self.eat(TokenKind::LeftBrace)?;
+
+                (start, name)
+            }
+        };
+
+        let mut items = Vec::new();
+
+        loop {
+            match implicit {
+                true => {}
+                false if self.peek()?.kind == TokenKind::RightBrace => break,
+                _ => {}
+            }
+
+            items.push(self.item()?);
+        }
+
+        let end_span = match implicit {
+            true => items.last().map(|i| i.span()).unwrap_or_else(|| {
+                Span::new(
+                    start_span.start(),
+                    start_span.end() + codespan::ByteOffset::from(1),
+                )
+            }),
+            false => self.eat(TokenKind::RightBrace)?,
+        };
+
+        let span = start_span.merge(end_span);
+
+        Ok(Module { name, items, span })
+    }
+
     pub fn item(&mut self) -> Result<Item> {
         match self.peek()?.kind {
             TokenKind::Fn => Ok(Item::Function(self.function()?)),
             TokenKind::Struct => Ok(Item::Struct(self.r#struct()?)),
+            TokenKind::Module => Ok(Item::Module(self.module(false)?)),
             _ => Err(ParseError::BadToken {
                 got: self.peek()?,
                 expected: vec!["fn", "struct"],
@@ -226,7 +287,7 @@ impl<'a> Parser<'a> {
     }
 
     fn inner_expr(&mut self, curr_binop: Option<BinOp>) -> Result<Expression> {
-        let mut primary = self.parse_primary_expr()?;
+        let mut primary = self.primary_expr()?;
 
         loop {
             if self.peek().is_err() {
@@ -241,7 +302,7 @@ impl<'a> Parser<'a> {
                         return Err(ParseError::BadBinOp);
                     }
 
-                    let rhs = self.parse_primary_expr()?;
+                    let rhs = self.primary_expr()?;
                     let span = primary.span.merge(rhs.span);
 
                     primary = Expression {
@@ -300,7 +361,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_primary_expr(&mut self) -> Result<Expression> {
+    fn primary_expr(&mut self) -> Result<Expression> {
         let peek = self.peek()?;
         let span = peek.span();
 
