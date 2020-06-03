@@ -1,5 +1,5 @@
 [package]
-name = "gamma"
+name = "typecheck"
 version = "0.1.0"
 authors = ["Wesley Norris <repnop@outlook.com>"]
 edition = "2018"
@@ -7,6 +7,4 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster = { path = "../aster" }
-codespan = "0.9.2"
-string-interner = "0.7.1"
+hir = { path = "../hir" }

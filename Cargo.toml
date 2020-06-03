@@ -1,8 +1,9 @@
 [workspace]
 members = [
-    "aster",
-    "gamma",
-    "oxygen",
+    "ast",
+    "hir",
+    "parser",
     "repl",
     "strcache",
+    "typecheck",
 ]

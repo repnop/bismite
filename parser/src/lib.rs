@@ -4,7 +4,7 @@ mod lexer;
 
 pub use lexer::{Token, TokenKind};
 
-use aster::*;
+use ast::*;
 use codespan::Span;
 use logos::Lexer;
 use std::collections::VecDeque;
@@ -88,7 +88,11 @@ impl<'a> Parser<'a> {
 
         loop {
             match implicit {
-                true => {}
+                true => {
+                    if let Err(ParseError::Eof) = self.peek() {
+                        break;
+                    }
+                }
                 false if self.peek()?.kind == TokenKind::RightBrace => break,
                 _ => {}
             }
@@ -129,7 +133,7 @@ impl<'a> Parser<'a> {
 
         self.eat(TokenKind::LeftParen)?;
 
-        let parameters = self.type_instance_list(TokenKind::RightParen)?;
+        let parameters = self.list(Self::function_parameter, TokenKind::RightParen)?;
         self.eat(TokenKind::RightParen)?;
 
         let return_ty = if self.peek()?.kind == TokenKind::ThinArrow {
@@ -152,11 +156,20 @@ impl<'a> Parser<'a> {
         })
     }
 
+    pub fn function_parameter(&mut self) -> Result<FunctionParameter> {
+        let name = self.identifier()?;
+        self.eat(TokenKind::Colon)?;
+        let ty = self.ty()?;
+        let span = name.span.merge(ty.span);
+
+        Ok(FunctionParameter { name, ty, span })
+    }
+
     pub fn r#struct(&mut self) -> Result<Struct> {
         let start_span = self.eat(TokenKind::Struct)?;
         let name = self.identifier()?;
         self.eat(TokenKind::LeftBrace)?;
-        let members = self.type_instance_list(TokenKind::RightBrace)?;
+        let members = self.list(Self::struct_member, TokenKind::RightBrace)?;
         let end_span = self.eat(TokenKind::RightBrace)?;
         let span = start_span.merge(end_span);
 
@@ -167,21 +180,24 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn type_instance(&mut self) -> Result<TypeInstance> {
+    pub fn struct_member(&mut self) -> Result<StructMember> {
         let name = self.identifier()?;
         self.eat(TokenKind::Colon)?;
         let ty = self.ty()?;
         let span = name.span.merge(ty.span);
 
-        Ok(TypeInstance { name, ty, span })
+        Ok(StructMember { name, ty, span })
     }
 
     /// Note: does not consume the delimiter
-    pub fn type_instance_list(&mut self, delimiter: TokenKind) -> Result<Vec<TypeInstance>> {
-        let mut type_instances = Vec::new();
+    pub fn list<T, F>(&mut self, mut f: F, delimiter: TokenKind) -> Result<Vec<T>>
+    where
+        F: FnMut(&mut Self) -> Result<T>,
+    {
+        let mut instances = Vec::new();
 
         while self.peek()?.kind != delimiter {
-            type_instances.push(self.type_instance()?);
+            instances.push(f(self)?);
 
             if self.peek()?.kind == TokenKind::Comma {
                 self.eat(TokenKind::Comma)?;
@@ -190,7 +206,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(type_instances)
+        Ok(instances)
     }
 
     pub fn block(&mut self) -> Result<Block> {
@@ -229,8 +245,12 @@ impl<'a> Parser<'a> {
                 let expr = self.expression()?;
 
                 if self.peek().map(|t| t.kind) == Ok(TokenKind::Semicolon) {
-                    self.eat(TokenKind::Semicolon)?;
-                    Ok(Either::Left(Statement::Expression(expr)))
+                    let end_span = self.eat(TokenKind::Semicolon)?;
+                    let span = expr.span.merge(end_span);
+                    Ok(Either::Left(Statement {
+                        kind: StatementKind::Expression(expr),
+                        span,
+                    }))
                 } else {
                     Ok(Either::Right(expr))
                 }
@@ -240,11 +260,21 @@ impl<'a> Parser<'a> {
 
     pub fn statement(&mut self) -> Result<Statement> {
         match self.peek()?.kind {
-            TokenKind::Let => Ok(Statement::VariableBinding(self.variable_binding()?)),
+            TokenKind::Let => {
+                let binding = self.variable_binding()?;
+                let span = binding.span;
+                let kind = StatementKind::VariableBinding(binding);
+                Ok(Statement { kind, span })
+            }
             TokenKind::Identifier(_) => {
                 let expr = self.expression()?;
-                self.eat(TokenKind::Semicolon)?;
-                Ok(Statement::Expression(expr))
+                let end_span = self.eat(TokenKind::Semicolon)?;
+                let span = expr.span.merge(end_span);
+
+                Ok(Statement {
+                    kind: StatementKind::Expression(expr),
+                    span,
+                })
             }
             _ => todo!(),
         }
@@ -382,10 +412,32 @@ impl<'a> Parser<'a> {
 
                 Ok(expr)
             }
-            TokenKind::Identifier(value) => {
+            TokenKind::Identifier(_) => {
+                let path = self.path()?;
+
+                match self.peek() {
+                    Ok(Token {
+                        kind: TokenKind::LeftBrace,
+                        ..
+                    }) => {
+                        let struct_expr = Box::new(self.struct_expr(path)?);
+                        let span = struct_expr.span;
+
+                        Ok(Expression {
+                            kind: ExpressionKind::Struct(struct_expr),
+                            span,
+                        })
+                    }
+                    _ => Ok(Expression {
+                        kind: ExpressionKind::Path(path),
+                        span,
+                    }),
+                }
+            }
+            TokenKind::Unit => {
                 self.token()?;
                 Ok(Expression {
-                    kind: ExpressionKind::Identifier(Identifier { value, span }),
+                    kind: ExpressionKind::Unit,
                     span,
                 })
             }
@@ -418,13 +470,46 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn struct_expr(&mut self, name: Path) -> Result<StructExpr> {
+        self.eat(TokenKind::LeftBrace)?;
+        let members = self.list(Self::struct_expr_member, TokenKind::RightBrace)?;
+        let end_span = self.eat(TokenKind::RightBrace)?;
+        let span = name.span.merge(end_span);
+
+        Ok(StructExpr {
+            name,
+            members,
+            span,
+        })
+    }
+
+    pub fn struct_expr_member(&mut self) -> Result<StructExprMember> {
+        let name = self.identifier()?;
+        self.eat(TokenKind::Colon)?;
+        let expression = self.expression()?;
+        let span = name.span.merge(expression.span);
+
+        Ok(StructExprMember {
+            name,
+            expression,
+            span,
+        })
+    }
+
     pub fn ty(&mut self) -> Result<Type> {
-        let token = self.token()?;
+        let token = self.peek()?;
         let span = token.span();
 
         match token.kind {
-            TokenKind::Identifier(s) => Ok(Type {
-                kind: TypeKind::Named(s),
+            TokenKind::Int => {
+                self.eat(TokenKind::Int)?;
+                Ok(Type {
+                    kind: TypeKind::Integer,
+                    span,
+                })
+            }
+            TokenKind::Identifier(_) => Ok(Type {
+                kind: TypeKind::Named(self.path()?),
                 span,
             }),
             _ => Err(ParseError::BadToken {
@@ -445,6 +530,35 @@ impl<'a> Parser<'a> {
                 expected: vec!["identifier"],
             }),
         }
+    }
+
+    pub fn path(&mut self) -> Result<Path> {
+        let mut segments = Vec::new();
+
+        while let Ok(Token {
+            kind: TokenKind::Identifier(_),
+            ..
+        }) = self.peek()
+        {
+            segments.push(self.identifier()?);
+
+            match self.peek() {
+                Ok(Token {
+                    kind: TokenKind::PathSep,
+                    ..
+                }) => self.eat(TokenKind::PathSep)?,
+                _ => break,
+            };
+        }
+
+        let span = {
+            let start = segments.first().unwrap().span;
+            let end = segments.last().unwrap().span;
+
+            start.merge(end)
+        };
+
+        Ok(Path { segments, span })
     }
 
     pub fn eat(&mut self, kind: TokenKind) -> Result<Span> {

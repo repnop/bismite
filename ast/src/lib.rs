@@ -1,4 +1,4 @@
-mod visit;
+pub mod visit;
 
 use codespan::Span;
 pub use visit::Visitor;
@@ -43,14 +43,21 @@ impl Item {
 #[derive(Clone, Debug)]
 pub struct Function {
     pub name: Identifier,
-    pub parameters: Vec<TypeInstance>,
+    pub parameters: Vec<FunctionParameter>,
     pub return_ty: Option<Type>,
     pub body: Block,
     pub span: Span,
 }
 
 #[derive(Clone, Debug)]
-pub struct TypeInstance {
+pub struct FunctionParameter {
+    pub name: Identifier,
+    pub ty: Type,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructMember {
     pub name: Identifier,
     pub ty: Type,
     pub span: Span,
@@ -67,12 +74,18 @@ pub struct Block {
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub name: Identifier,
-    pub members: Vec<TypeInstance>,
+    pub members: Vec<StructMember>,
     pub span: Span,
 }
 
 #[derive(Clone, Debug)]
-pub enum Statement {
+pub struct Statement {
+    pub kind: StatementKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum StatementKind {
     VariableBinding(VariableBinding),
     Expression(Expression),
 }
@@ -95,15 +108,30 @@ pub struct Expression {
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
     Assignment(Box<Expression>, Box<Expression>),
-    Block(Box<Block>),
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
+    Block(Box<Block>),
     Boolean(bool),
     FieldAccess(Box<Expression>, Identifier),
     FnCall(Box<Expression>, Vec<Expression>),
-    Identifier(Identifier),
     Integer(i128),
+    Path(Path),
+    Struct(Box<StructExpr>),
     Unary(UnaryOp, Box<Expression>),
     Unit,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructExpr {
+    pub name: Path,
+    pub members: Vec<StructExprMember>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructExprMember {
+    pub name: Identifier,
+    pub expression: Expression,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -142,5 +170,13 @@ pub struct Type {
 
 #[derive(Clone, Debug)]
 pub enum TypeKind {
-    Named(String),
+    Bool,
+    Integer,
+    Named(Path),
+}
+
+#[derive(Clone, Debug)]
+pub struct Path {
+    pub segments: Vec<Identifier>,
+    pub span: Span,
 }

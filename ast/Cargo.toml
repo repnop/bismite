@@ -1,5 +1,5 @@
 [package]
-name = "repl"
+name = "ast"
 version = "0.1.0"
 authors = ["Wesley Norris <repnop@outlook.com>"]
 edition = "2018"
@@ -7,10 +7,4 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ast = { path = "../ast" }
-codespan = "0.9.4"
-codespan-reporting = "0.9.4"
-hir = { path = "../hir" }
-parser = { path = "../parser" }
-rustyline = "6.1.2"
-typecheck = { path = "../typecheck" }
+codespan = "0.9.2"

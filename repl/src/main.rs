@@ -7,7 +7,7 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use eval::EvalError;
-use oxygen::ParseError;
+use parser::ParseError;
 use repl::{Repl, ReplError, ReplErrorKind};
 
 fn main() {

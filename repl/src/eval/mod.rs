@@ -1,4 +1,6 @@
-use aster::{AstNode, BinOp, Expression, ExpressionKind, Statement};
+pub mod hir_engine;
+
+use ast::{AstNode, BinOp, Expression, ExpressionKind, Statement, StatementKind};
 use codespan::Span;
 use std::collections::HashMap;
 
@@ -12,15 +14,14 @@ pub enum EvalError {
     Multiple(Vec<EvalError>),
 }
 
+#[derive(Default)]
 pub struct Environment {
     variables: HashMap<String, VariableInfo>,
 }
 
 impl Environment {
     pub fn new() -> Self {
-        Self {
-            variables: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn variable_info(&self, ident: &str) -> Option<&VariableInfo> {
@@ -42,18 +43,18 @@ impl Environment {
         let expr_span = expr.span;
         match expr.kind.clone() {
             ExpressionKind::Integer(_) => Ok(expr),
-            ExpressionKind::Identifier(ident) => match self.variables.get(&ident.value) {
+            ExpressionKind::Path(path) => match self.variables.get(&path.segments[0].value) {
                 Some(variable) => match variable.ty() {
                     Type::Integer(i) => Ok(Expression {
                         kind: ExpressionKind::Integer(*i),
-                        span: ident.span,
+                        span: path.span,
                     }),
                     Type::Boolean(b) => Ok(Expression {
                         kind: ExpressionKind::Boolean(*b),
-                        span: ident.span,
+                        span: path.span,
                     }),
                 },
-                None => Err(EvalError::VariableNotFound(ident.span)),
+                None => Err(EvalError::VariableNotFound(path.span)),
             },
             ExpressionKind::BinaryOperation(e1, op, e2) => {
                 let e1 = self.eval_expr(*e1)?;
@@ -86,8 +87,8 @@ impl Environment {
                 let e2 = self.eval_expr(*e2)?;
 
                 match e1.kind {
-                    ExpressionKind::Identifier(ident) => {
-                        match self.variables.get_mut(&ident.value) {
+                    ExpressionKind::Path(path) => {
+                        match self.variables.get_mut(&path.segments[0].value) {
                             Some(variable) => {
                                 let t2 = Type::try_from(&e2)?;
                                 match variable.mutable() {
@@ -105,10 +106,10 @@ impl Environment {
                                         )),
                                     },
                                     false if variable.ty().same_kind(&t2) => {
-                                        Err(EvalError::VariableNotAssignable(ident.span))
+                                        Err(EvalError::VariableNotAssignable(path.span))
                                     }
                                     false => Err(EvalError::Multiple(vec![
-                                        EvalError::VariableNotAssignable(ident.span),
+                                        EvalError::VariableNotAssignable(path.span),
                                         EvalError::IncompatibleTypes(
                                             (variable.ty().to_string(), e1.span),
                                             (t2.to_string(), e2_span),
@@ -116,7 +117,7 @@ impl Environment {
                                     ])),
                                 }
                             }
-                            None => Err(EvalError::VariableNotFound(ident.span)),
+                            None => Err(EvalError::VariableNotFound(path.span)),
                         }
                     }
                     _ => Err(EvalError::NotValidAssignee(e1.span)),
@@ -128,11 +129,11 @@ impl Environment {
     }
 
     fn eval_stmt(&mut self, stmt: Statement) -> Result<(), EvalError> {
-        match stmt {
-            Statement::Expression(e) => {
+        match stmt.kind {
+            StatementKind::Expression(e) => {
                 self.eval_expr(e)?;
             }
-            Statement::VariableBinding(vb) => {
+            StatementKind::VariableBinding(vb) => {
                 let ty = match self.eval_expr(vb.value)?.kind {
                     ExpressionKind::Integer(i) => Type::Integer(i),
                     ExpressionKind::Boolean(b) => Type::Boolean(b),

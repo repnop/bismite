@@ -67,6 +67,8 @@ pub enum TokenKind {
     Colon,
     #[token(".")]
     Period,
+    #[token("::")]
+    PathSep,
 
     // Keywords
     #[token("fn")]
@@ -90,6 +92,10 @@ pub enum TokenKind {
     True,
     #[token("false")]
     False,
+    #[token("Int")]
+    Int,
+    #[token("Unit")]
+    Unit,
 
     #[token("\"")]
     DoubleQuote,
@@ -149,8 +155,11 @@ impl TokenKind {
             Module => "module",
             True => "true",
             False => "false",
+            Int => "Int",
+            Unit => "Unit",
             DoubleQuote => "\"",
             SingleQuote => "'",
+            PathSep => "::",
             Identifier(_) => "identifier",
             Integer(_) => "integer",
             Error | Generic(_) | Character(_) | Whitespace => unreachable!(),

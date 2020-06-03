@@ -1,12 +1,21 @@
-use crate::eval::{Environment, EvalError};
-use aster::AstNode;
-use oxygen::{ParseError, Parser};
+use crate::eval::{hir_engine::HirEngine, Environment, EvalError};
+use ast::AstNode;
+use parser::{ParseError, Parser};
 use rustyline::{error::ReadlineError, hint::HistoryHinter, CompletionType, Config, Editor};
+
+const HELP_MSG: &str = r"Commands:
+    .help                       Displays this help text
+    .ast                        Display the following code as its AST form
+    .clear                      Clear the current screen
+    .varinfo <ident>            Display the variable information associated with the given identifier
+    .typeinfo <path>            Display information about the type associated with the given path
+    .loadfile <file_path>       Load the given file path as a module";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EvalMode {
     Ast,
     Eval,
+    Hir,
 }
 
 pub enum LineReturn {
@@ -53,6 +62,7 @@ pub struct Repl {
     environment: Environment,
     editor: Editor<Helper>,
     prompt_mode: PromptMode,
+    hir_engine: HirEngine,
 }
 
 impl Repl {
@@ -70,6 +80,7 @@ impl Repl {
             environment: Environment::new(),
             editor,
             prompt_mode: PromptMode::Fresh,
+            hir_engine: HirEngine::new(),
         }
     }
     pub fn run(&mut self) -> Result<Option<String>, ReplError> {
@@ -131,18 +142,42 @@ impl Repl {
         let mut eval_output = None;
         for node in nodes {
             match eval_mode {
-                EvalMode::Eval => {
-                    let out = match self.environment.eval(node) {
-                        Ok(out) => out,
-                        Err(e) => {
-                            let code = self.code.clone();
-                            self.reset();
-                            return Err(ReplError::new(code, ReplErrorKind::EvalError(e)));
+                EvalMode::Eval => match node {
+                    AstNode::Item(item) => {
+                        match self.hir_engine.evaluate_item(&hir::Item::convert(&item)) {
+                            Ok(_) => eval_output = None,
+                            Err(e) => eval_output = Some(format!("{:?}", e)),
                         }
-                    };
-                    eval_output = out;
-                }
+                    }
+                    AstNode::Expression(e) => match self
+                        .hir_engine
+                        .evaluate_expression(&hir::Expression::convert(&e), None)
+                    {
+                        Ok(e) => eval_output = Some(format!("{:?}", e)),
+                        Err(e) => eval_output = Some(format!("{:?}", e)),
+                    },
+                    _ => {
+                        let out = match self.environment.eval(node) {
+                            Ok(out) => out,
+                            Err(e) => {
+                                let code = self.code.clone();
+                                self.reset();
+                                return Err(ReplError::new(code, ReplErrorKind::EvalError(e)));
+                            }
+                        };
+                        eval_output = out;
+                    }
+                },
                 EvalMode::Ast => eval_output = Some(format!("{:#?}", node)),
+                EvalMode::Hir => {
+                    eval_output = Some(format!("{:#?}", {
+                        match &node {
+                            AstNode::Expression(_) => todo!(),
+                            AstNode::Item(i) => hir::Item::convert(i),
+                            AstNode::Statement(_) => todo!(),
+                        }
+                    }))
+                }
             }
         }
         self.reset();
@@ -151,49 +186,129 @@ impl Repl {
     }
 
     fn eval_repl_command(&mut self, s: &str) -> bool {
-        if s.trim() == ".clear" {
-            println!("\x1B[2J\x1B[H");
-            self.code.clear();
-        } else if s.trim() == ".help" {
-            println!(
-                r"Commands:
-    .help                       Displays this help text
-    .ast                        Display the following code as its AST form
-    .clear                      Clear the current screen
-    .varinfo <ident>            Display the variable information associated with the given identifier"
-            );
-        } else if s.starts_with(".varinfo") {
-            let ident = match s.split(' ').nth(1) {
-                Some(ident) => ident,
-                None => {
-                    println!("Must provide an identifier to .varinfo, e.g. .varinfo my_variable");
+        let command = match s.split(' ').next() {
+            Some(cmd) => cmd,
+            None => return false,
+        };
+
+        match command {
+            ".clear" => {
+                println!("\x1B[2J\x1B[H");
+                self.code.clear();
+            }
+            ".help" => {
+                println!("{}", HELP_MSG);
+            }
+            ".varinfo" => {
+                let ident = match s.split(' ').nth(1) {
+                    Some(ident) => ident,
+                    None => {
+                        println!(
+                            "Must provide an identifier to .varinfo, e.g. .varinfo my_variable"
+                        );
+                        return true;
+                    }
+                };
+                let valid_ident = Parser::new(ident).identifier().is_ok();
+
+                if !valid_ident {
+                    println!("Invalid identifier");
                     return true;
                 }
-            };
-            let valid_ident = Parser::new(ident).identifier().is_ok();
 
-            if !valid_ident {
-                println!("Invalid identifier");
-                return true;
+                match self.environment.variable_info(ident) {
+                    Some(var_info) => println!("{:?}", var_info),
+                    None => println!("Variable with identifier `{}` not found in scope", ident),
+                }
             }
+            ".typeinfo" => {
+                let path = match s.split(' ').nth(1) {
+                    Some(path) => path,
+                    None => {
+                        println!("Must provide a path to .typeinfo, e.g. .typeinfo MyType");
+                        return true;
+                    }
+                };
+                let path = match Parser::new(path).path() {
+                    Ok(path) => hir::Path::convert(&path),
+                    Err(e) => {
+                        println!("Invalid path: {:?}", e);
+                        return true;
+                    }
+                };
 
-            match self.environment.variable_info(ident) {
-                Some(var_info) => println!("{:?}", var_info),
-                None => println!("Variable with identifier `{}` not found in scope", ident),
+                match self.hir_engine.typeinfo(&path) {
+                    Some(type_info) => println!("{:?}", type_info),
+                    None => println!("Type with path `{}` not found in scope", path),
+                }
             }
-        } else {
-            return false;
+            ".loadfile" => {
+                let file_path = match s.split(' ').nth(1) {
+                    Some(path) => path,
+                    None => {
+                        println!("Must provide a file path to .loadfile");
+                        return true;
+                    }
+                };
+
+                let file_contents = match std::fs::read_to_string(&file_path) {
+                    Ok(contents) => contents,
+                    Err(e) => {
+                        println!("Error reading file: {}", e);
+                        return true;
+                    }
+                };
+
+                let parsed = match Parser::new(&file_contents).module(true) {
+                    Ok(mut module) => {
+                        module.name = ast::Identifier {
+                            value: std::path::Path::new(&file_path)
+                                .file_stem()
+                                .unwrap()
+                                .to_string_lossy()
+                                .to_string(),
+                            span: codespan::Span::new(0, 0),
+                        };
+
+                        module
+                    }
+                    Err(e) => {
+                        println!("Error parsing file: {:?}", e);
+                        return true;
+                    }
+                };
+
+                let module = hir::Module::convert(&parsed);
+                let span = module.span;
+                if let Err(e) = self.hir_engine.evaluate_item(&hir::Item {
+                    kind: hir::ItemKind::Module(module),
+                    span,
+                }) {
+                    println!("Error processing module: {:?}", e);
+                }
+            }
+            _ => return false,
         }
 
         true
     }
 
     fn eval_mode(&mut self) -> EvalMode {
-        if self.code.starts_with(".ast") {
-            self.code = self.code.trim_start_matches(".ast").to_string();
-            EvalMode::Ast
-        } else {
-            EvalMode::Eval
+        let cmd = match self.code.split_whitespace().next() {
+            Some(cmd) => cmd,
+            None => return EvalMode::Eval,
+        };
+
+        match cmd.trim() {
+            ".ast" => {
+                self.code = self.code.trim_start_matches(".ast").to_string();
+                EvalMode::Ast
+            }
+            ".hir" => {
+                self.code = self.code.trim_start_matches(".hir").to_string();
+                EvalMode::Hir
+            }
+            _ => EvalMode::Eval,
         }
     }
 
