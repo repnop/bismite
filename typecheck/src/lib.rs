@@ -135,7 +135,7 @@ impl TypeEngine {
                             _ => todo!("more type stuff"),
                         };
 
-                        Ok((m.name.name, id))
+                        Ok((m.name, id))
                     })
                     .collect::<Result<_>>()?
             },
@@ -161,7 +161,7 @@ impl TypeEngine {
                 .map(|member| {
                     let id = self.fresh_infer();
                     Ok((
-                        member.name.name,
+                        member.name,
                         self.typecheck_expression(&member.expression, id)?,
                     ))
                 })
@@ -194,27 +194,49 @@ impl Default for TypeEngine {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum TypeInfo {
     Bool,
     Integer,
     Struct {
         full_path: Path,
-        members: HashMap<Sym, TypeId>,
+        members: HashMap<Identifier, TypeId>,
     },
     Infer,
     Ref(TypeId),
     Unit,
 }
 
-impl Debug for TypeInfo {
+impl TypeInfo {
+    pub fn debug<'a>(&'a self, engine: &'a TypeEngine) -> TypeInfoDebug<'a> {
+        TypeInfoDebug { info: self, engine }
+    }
+}
+
+pub struct TypeInfoDebug<'a> {
+    info: &'a TypeInfo,
+    engine: &'a TypeEngine,
+}
+
+impl Debug for TypeInfoDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        match &self.info {
             TypeInfo::Bool => write!(f, "Bool"),
             TypeInfo::Integer => write!(f, "Int"),
             TypeInfo::Struct {
                 full_path, members, ..
-            } => write!(f, "{:?} {{ {:?} }}", full_path, members),
+            } => {
+                writeln!(f, "{} {{", full_path)?;
+                for (ident, &ty) in members {
+                    writeln!(
+                        f,
+                        "    {}: {:?},",
+                        ident.string(),
+                        self.engine.typeinfo(ty).debug(self.engine)
+                    )?;
+                }
+                write!(f, "}}")
+            }
             TypeInfo::Infer => write!(f, "_"),
             TypeInfo::Unit => write!(f, "Unit"),
             TypeInfo::Ref(_) => write!(f, "<type reference>"),

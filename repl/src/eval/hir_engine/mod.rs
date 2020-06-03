@@ -39,6 +39,10 @@ impl HirEngine {
         Self::default()
     }
 
+    pub fn type_engine(&self) -> &TypeEngine {
+        &self.type_engine
+    }
+
     pub fn evaluate_item(&mut self, item: &Item) -> Result<(), HirEngineError> {
         match &item.kind {
             ItemKind::Struct(s) => self

@@ -238,7 +238,9 @@ impl Repl {
                 };
 
                 match self.hir_engine.typeinfo(&path) {
-                    Some(type_info) => println!("{:?}", type_info),
+                    Some(type_info) => {
+                        println!("{:?}", type_info.debug(&self.hir_engine.type_engine()))
+                    }
                     None => println!("Type with path `{}` not found in scope", path),
                 }
             }
