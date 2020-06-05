@@ -1,20 +1,38 @@
 use hir::{Identifier, Item, Sym};
 use std::collections::HashMap;
+use typecheck::{TypeEngine, TypeId};
 
 #[derive(Clone, Debug, Default)]
 pub struct SymbolTable<M = ()> {
-    parent: Option<Box<SymbolTable<M>>>,
-    symbols: HashMap<Sym, SymbolKind<M>>,
-}
-
-#[derive(Clone, Debug)]
-pub enum SymbolKind<M = ()> {
-    Local(Local<M>),
-    Item(Item),
+    pub parent: Option<Box<SymbolTable<M>>>,
+    pub symbols: HashMap<Identifier, Local<M>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Local<M> {
-    pub ident: Identifier,
+    pub name: Identifier,
+    pub value: super::expr::Expression,
+    pub ty: TypeId,
+    pub mutable: bool,
     pub metadata: M,
+}
+
+impl<M> Local<M> {
+    pub fn debug<'a>(&'a self, engine: &'a TypeEngine) -> LocalDebug<'a, M> {
+        LocalDebug { local: self, engine }
+    }
+}
+
+pub struct LocalDebug<'a, M> {
+    local: &'a Local<M>,
+    engine: &'a TypeEngine,
+}
+
+impl<M: std::fmt::Debug> std::fmt::Debug for LocalDebug<'_, M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Binding `{}`:", self.local.name)?;
+        writeln!(f, "    mutable? {}", self.local.mutable)?;
+        writeln!(f, "       type: {:?}", self.engine.typeinfo(self.local.ty).debug(self.engine))?;
+        write!(f, "      value: {:?}", self.local.value)
+    }
 }

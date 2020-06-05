@@ -19,10 +19,7 @@ pub enum Either<T, U> {
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     Eof,
-    BadToken {
-        got: Token,
-        expected: Vec<&'static str>,
-    },
+    BadToken { got: Token, expected: Vec<&'static str> },
     BadBinOp,
 }
 
@@ -33,10 +30,7 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self {
-            lexer: Lexer::new(input),
-            peeks: VecDeque::new(),
-        }
+        Self { lexer: Lexer::new(input), peeks: VecDeque::new() }
     }
 
     pub fn guess(&mut self) -> Result<Option<AstNode>> {
@@ -45,7 +39,7 @@ impl<'a> Parser<'a> {
         }
 
         match self.peek()?.kind {
-            TokenKind::Fn | TokenKind::Struct | TokenKind::Module => {
+            TokenKind::Fn | TokenKind::Struct | TokenKind::Module | TokenKind::Use => {
                 Ok(Some(AstNode::Item(self.item()?)))
             }
             _ => match self.statement_or_expression()? {
@@ -67,11 +61,7 @@ impl<'a> Parser<'a> {
             true => match self.peek() {
                 Ok(token) => (token.span(), Identifier::dummy()),
                 Err(ParseError::Eof) => {
-                    return Ok(Module {
-                        name: Identifier::dummy(),
-                        items: Vec::new(),
-                        span: Span::new(0, 0),
-                    })
+                    return Ok(Module { name: Identifier::dummy(), items: Vec::new(), span: Span::new(0, 0) })
                 }
                 Err(e) => return Err(e),
             },
@@ -101,12 +91,10 @@ impl<'a> Parser<'a> {
         }
 
         let end_span = match implicit {
-            true => items.last().map(|i| i.span()).unwrap_or_else(|| {
-                Span::new(
-                    start_span.start(),
-                    start_span.end() + codespan::ByteOffset::from(1),
-                )
-            }),
+            true => items
+                .last()
+                .map(|i| i.span())
+                .unwrap_or_else(|| Span::new(start_span.start(), start_span.end() + codespan::ByteOffset::from(1))),
             false => self.eat(TokenKind::RightBrace)?,
         };
 
@@ -120,10 +108,8 @@ impl<'a> Parser<'a> {
             TokenKind::Fn => Ok(Item::Function(self.function()?)),
             TokenKind::Struct => Ok(Item::Struct(self.r#struct()?)),
             TokenKind::Module => Ok(Item::Module(self.module(false)?)),
-            _ => Err(ParseError::BadToken {
-                got: self.peek()?,
-                expected: vec!["fn", "struct"],
-            }),
+            TokenKind::Use => Ok(Item::Use(self.usage()?)),
+            _ => Err(ParseError::BadToken { got: self.peek()?, expected: vec!["fn", "struct"] }),
         }
     }
 
@@ -147,13 +133,7 @@ impl<'a> Parser<'a> {
         let body = self.block()?;
         let span = start_span.merge(body.span);
 
-        Ok(Function {
-            name,
-            parameters,
-            return_ty,
-            body,
-            span,
-        })
+        Ok(Function { name, parameters, return_ty, body, span })
     }
 
     pub fn function_parameter(&mut self) -> Result<FunctionParameter> {
@@ -173,11 +153,7 @@ impl<'a> Parser<'a> {
         let end_span = self.eat(TokenKind::RightBrace)?;
         let span = start_span.merge(end_span);
 
-        Ok(Struct {
-            name,
-            members,
-            span,
-        })
+        Ok(Struct { name, members, span })
     }
 
     pub fn struct_member(&mut self) -> Result<StructMember> {
@@ -230,12 +206,7 @@ impl<'a> Parser<'a> {
         let end_span = self.eat(TokenKind::RightBrace)?;
         let span = start_span.merge(end_span);
 
-        Ok(Block {
-            items,
-            statements,
-            return_expr,
-            span,
-        })
+        Ok(Block { items, statements, return_expr, span })
     }
 
     pub fn statement_or_expression(&mut self) -> Result<Either<Statement, Expression>> {
@@ -247,10 +218,7 @@ impl<'a> Parser<'a> {
                 if self.peek().map(|t| t.kind) == Ok(TokenKind::Semicolon) {
                     let end_span = self.eat(TokenKind::Semicolon)?;
                     let span = expr.span.merge(end_span);
-                    Ok(Either::Left(Statement {
-                        kind: StatementKind::Expression(expr),
-                        span,
-                    }))
+                    Ok(Either::Left(Statement { kind: StatementKind::Expression(expr), span }))
                 } else {
                     Ok(Either::Right(expr))
                 }
@@ -271,10 +239,7 @@ impl<'a> Parser<'a> {
                 let end_span = self.eat(TokenKind::Semicolon)?;
                 let span = expr.span.merge(end_span);
 
-                Ok(Statement {
-                    kind: StatementKind::Expression(expr),
-                    span,
-                })
+                Ok(Statement { kind: StatementKind::Expression(expr), span })
             }
             _ => todo!(),
         }
@@ -303,13 +268,7 @@ impl<'a> Parser<'a> {
         let value = self.expression()?;
         let end = self.eat(TokenKind::Semicolon)?;
 
-        Ok(VariableBinding {
-            mutable,
-            name,
-            ty,
-            value,
-            span: let_span.merge(end),
-        })
+        Ok(VariableBinding { mutable, name, ty, value, span: let_span.merge(end) })
     }
 
     pub fn expression(&mut self) -> Result<Expression> {
@@ -332,15 +291,11 @@ impl<'a> Parser<'a> {
                         return Err(ParseError::BadBinOp);
                     }
 
-                    let rhs = self.primary_expr()?;
+                    let rhs = self.inner_expr(Some(binop))?;
                     let span = primary.span.merge(rhs.span);
 
                     primary = Expression {
-                        kind: ExpressionKind::BinaryOperation(
-                            Box::new(primary),
-                            binop,
-                            Box::new(rhs),
-                        ),
+                        kind: ExpressionKind::BinaryOperation(Box::new(primary), binop, Box::new(rhs)),
                         span,
                     };
                 }
@@ -349,20 +304,14 @@ impl<'a> Parser<'a> {
                     let ident = self.identifier()?;
                     let span = primary.span.merge(ident.span);
 
-                    primary = Expression {
-                        kind: ExpressionKind::FieldAccess(Box::new(primary), ident),
-                        span,
-                    };
+                    primary = Expression { kind: ExpressionKind::FieldAccess(Box::new(primary), ident), span };
                 }
                 TokenKind::Eq => {
                     self.eat(TokenKind::Eq)?;
                     let rhs = self.expression()?;
                     let span = primary.span.merge(rhs.span);
 
-                    return Ok(Expression {
-                        kind: ExpressionKind::Assignment(Box::new(primary), Box::new(rhs)),
-                        span,
-                    });
+                    return Ok(Expression { kind: ExpressionKind::Assignment(Box::new(primary), Box::new(rhs)), span });
                 }
                 TokenKind::LeftParen => {
                     let mut exprs = Vec::new();
@@ -399,10 +348,7 @@ impl<'a> Parser<'a> {
             TokenKind::Integer(n) => {
                 self.eat(TokenKind::Integer(n))?;
 
-                Ok(Expression {
-                    kind: ExpressionKind::Integer(n),
-                    span,
-                })
+                Ok(Expression { kind: ExpressionKind::Integer(n), span })
             }
             TokenKind::LeftParen => {
                 let start_span = self.eat(TokenKind::LeftParen)?;
@@ -416,38 +362,23 @@ impl<'a> Parser<'a> {
                 let path = self.path()?;
 
                 match self.peek() {
-                    Ok(Token {
-                        kind: TokenKind::LeftBrace,
-                        ..
-                    }) => {
+                    Ok(Token { kind: TokenKind::LeftBrace, .. }) => {
                         let struct_expr = Box::new(self.struct_expr(path)?);
                         let span = struct_expr.span;
 
-                        Ok(Expression {
-                            kind: ExpressionKind::Struct(struct_expr),
-                            span,
-                        })
+                        Ok(Expression { kind: ExpressionKind::Struct(struct_expr), span })
                     }
-                    _ => Ok(Expression {
-                        kind: ExpressionKind::Path(path),
-                        span,
-                    }),
+                    _ => Ok(Expression { kind: ExpressionKind::Path(path), span }),
                 }
             }
             TokenKind::Unit => {
                 self.token()?;
-                Ok(Expression {
-                    kind: ExpressionKind::Unit,
-                    span,
-                })
+                Ok(Expression { kind: ExpressionKind::Unit, span })
             }
             TokenKind::LeftBrace => {
                 let block = self.block()?;
                 let span = block.span;
-                Ok(Expression {
-                    kind: ExpressionKind::Block(Box::new(block)),
-                    span,
-                })
+                Ok(Expression { kind: ExpressionKind::Block(Box::new(block)), span })
             }
             b @ TokenKind::True | b @ TokenKind::False => {
                 let value = match &b {
@@ -458,15 +389,9 @@ impl<'a> Parser<'a> {
 
                 self.eat(b)?;
 
-                Ok(Expression {
-                    kind: ExpressionKind::Boolean(value),
-                    span,
-                })
+                Ok(Expression { kind: ExpressionKind::Boolean(value), span })
             }
-            _ => Err(ParseError::BadToken {
-                got: peek,
-                expected: vec!["expression"],
-            }),
+            _ => Err(ParseError::BadToken { got: peek, expected: vec!["expression"] }),
         }
     }
 
@@ -476,11 +401,7 @@ impl<'a> Parser<'a> {
         let end_span = self.eat(TokenKind::RightBrace)?;
         let span = name.span.merge(end_span);
 
-        Ok(StructExpr {
-            name,
-            members,
-            span,
-        })
+        Ok(StructExpr { name, members, span })
     }
 
     pub fn struct_expr_member(&mut self) -> Result<StructExprMember> {
@@ -489,11 +410,7 @@ impl<'a> Parser<'a> {
         let expression = self.expression()?;
         let span = name.span.merge(expression.span);
 
-        Ok(StructExprMember {
-            name,
-            expression,
-            span,
-        })
+        Ok(StructExprMember { name, expression, span })
     }
 
     pub fn ty(&mut self) -> Result<Type> {
@@ -503,19 +420,10 @@ impl<'a> Parser<'a> {
         match token.kind {
             TokenKind::Int => {
                 self.eat(TokenKind::Int)?;
-                Ok(Type {
-                    kind: TypeKind::Integer,
-                    span,
-                })
+                Ok(Type { kind: TypeKind::Integer, span })
             }
-            TokenKind::Identifier(_) => Ok(Type {
-                kind: TypeKind::Named(self.path()?),
-                span,
-            }),
-            _ => Err(ParseError::BadToken {
-                got: token,
-                expected: vec!["type"],
-            }),
+            TokenKind::Identifier(_) => Ok(Type { kind: TypeKind::Named(self.path()?), span }),
+            _ => Err(ParseError::BadToken { got: token, expected: vec!["type"] }),
         }
     }
 
@@ -525,28 +433,18 @@ impl<'a> Parser<'a> {
 
         match token.kind {
             TokenKind::Identifier(value) => Ok(Identifier { value, span }),
-            _ => Err(ParseError::BadToken {
-                got: token,
-                expected: vec!["identifier"],
-            }),
+            _ => Err(ParseError::BadToken { got: token, expected: vec!["identifier"] }),
         }
     }
 
     pub fn path(&mut self) -> Result<Path> {
         let mut segments = Vec::new();
 
-        while let Ok(Token {
-            kind: TokenKind::Identifier(_),
-            ..
-        }) = self.peek()
-        {
+        while let Ok(Token { kind: TokenKind::Identifier(_), .. }) = self.peek() {
             segments.push(self.identifier()?);
 
             match self.peek() {
-                Ok(Token {
-                    kind: TokenKind::PathSep,
-                    ..
-                }) => self.eat(TokenKind::PathSep)?,
+                Ok(Token { kind: TokenKind::PathSep, .. }) => self.eat(TokenKind::PathSep)?,
                 _ => break,
             };
         }
@@ -561,16 +459,22 @@ impl<'a> Parser<'a> {
         Ok(Path { segments, span })
     }
 
+    pub fn usage(&mut self) -> Result<Use> {
+        let start_span = self.eat(TokenKind::Use)?;
+        let path = self.path()?;
+        let end_span = self.eat(TokenKind::Semicolon)?;
+        let span = start_span.merge(end_span);
+
+        Ok(Use { path, span })
+    }
+
     pub fn eat(&mut self, kind: TokenKind) -> Result<Span> {
         let token = self.token()?;
 
         if token.kind() == &kind {
             Ok(token.span())
         } else {
-            Err(ParseError::BadToken {
-                got: token,
-                expected: vec![kind.as_str()],
-            })
+            Err(ParseError::BadToken { got: token, expected: vec![kind.as_str()] })
         }
     }
 
@@ -613,14 +517,11 @@ impl<'a> Parser<'a> {
         let token = self.token()?;
 
         match token.kind {
-            TokenKind::Plus => Ok(BinOp::Plus),
-            TokenKind::Minus => Ok(BinOp::Minus),
-            TokenKind::Star => Ok(BinOp::Mult),
+            TokenKind::Plus => Ok(BinOp::Add),
+            TokenKind::Minus => Ok(BinOp::Subtract),
+            TokenKind::Star => Ok(BinOp::Multiply),
             TokenKind::Slash => Ok(BinOp::Divide),
-            _ => Err(ParseError::BadToken {
-                got: token,
-                expected: vec!["binary operator"],
-            }),
+            _ => Err(ParseError::BadToken { got: token, expected: vec!["binary operator"] }),
         }
     }
 

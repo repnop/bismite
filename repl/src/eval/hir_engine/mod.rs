@@ -1,29 +1,32 @@
+mod expr;
 mod symbol_table;
 
 use codespan::Span;
 use hir::{
-    Expression, ExpressionKind, Item, ItemKind, Local, Path, Statement, StatementKind, Struct,
+    visit::Visitor, BinOp, Expression, ExpressionKind, Identifier, Item, ItemKind, Local, Module, Path, Statement,
+    StatementKind, Struct,
 };
-use std::collections::HashMap;
-use std::fmt::{self, Debug, Formatter};
-use symbol_table::{SymbolKind, SymbolTable};
-use typecheck::{TypeEngine, TypeError, TypeId, TypeInfo};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::{self, Debug, Formatter},
+};
+use symbol_table::SymbolTable;
+use typecheck::{Context, TypeEngine, TypeError, TypeId, TypeInfo};
 
 pub enum HirEngineError {
-    TypeError(TypeError),
+    TypeError(TypeError, TypeEngine),
+    UnknownImport(Path),
+    UnknownIdentifier(Identifier),
 }
 
 impl Debug for HirEngineError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            HirEngineError::TypeError(e) => write!(f, "{:?}", e),
+            HirEngineError::TypeError(e, engine) => write!(f, "{:?}", e.debug(engine)),
+            HirEngineError::UnknownImport(path) => write!(f, "UnknownImport({})", path),
+            HirEngineError::UnknownIdentifier(ident) => write!(f, "UnknownIdentifier({})", ident),
         }
-    }
-}
-
-impl From<TypeError> for HirEngineError {
-    fn from(e: TypeError) -> Self {
-        HirEngineError::TypeError(e)
     }
 }
 
@@ -32,6 +35,7 @@ pub struct HirEngine {
     type_engine: TypeEngine,
     symbol_table: SymbolTable,
     current_path: Path,
+    aliases: HashMap<Path, HashMap<Path, Path>>,
 }
 
 impl HirEngine {
@@ -45,12 +49,15 @@ impl HirEngine {
 
     pub fn evaluate_item(&mut self, item: &Item) -> Result<(), HirEngineError> {
         match &item.kind {
-            ItemKind::Struct(s) => self
-                .type_engine
-                .register_struct(&self.current_path, s)
-                .map_err(Into::into),
+            ItemKind::Struct(s) => {
+                let ctx = self.mk_context();
+                self.type_engine.register_struct(&ctx, &self.current_path, s).map_err(|e| self.mk_type_error(e))
+            }
             ItemKind::Module(module) => {
                 self.current_path = self.current_path.with_ident(module.name);
+
+                let aliases = self.aliases.entry(self.current_path.clone()).or_default();
+                UseCollector::new(aliases).visit_module(&module);
 
                 // TODO: clear stuff on errors
                 for item in &module.items {
@@ -58,6 +65,19 @@ impl HirEngine {
                 }
 
                 self.current_path.pop();
+
+                Ok(())
+            }
+            ItemKind::Use(usage) => {
+                let ctx = self.mk_context();
+                if self.type_engine.typeid_from_path(&ctx, &usage.path).is_none() {
+                    return Err(HirEngineError::UnknownImport(usage.path.clone()));
+                }
+
+                self.aliases
+                    .entry(self.current_path.clone())
+                    .or_default()
+                    .insert(Path::from_identifier(usage.path.last()), usage.path.clone());
 
                 Ok(())
             }
@@ -73,26 +93,97 @@ impl HirEngine {
     }
 
     pub fn evaluate_local(&mut self, local: &Local) -> Result<(), HirEngineError> {
-        todo!("evaluate_local")
+        let ctx = self.mk_context();
+        let type_id = self.type_engine.from_hir_type(&ctx, &local.ty).map_err(|e| self.mk_type_error(e))?;
+        let expr = self.evaluate_expression(&local.value, Some(type_id))?;
+
+        self.symbol_table.symbols.insert(
+            local.name,
+            symbol_table::Local { name: local.name, value: expr, ty: type_id, mutable: local.mutable, metadata: () },
+        );
+
+        Ok(())
     }
 
     pub fn evaluate_expression(
         &mut self,
         expr: &Expression,
         expected_type: Option<TypeId>,
-    ) -> Result<Expression, HirEngineError> {
-        let expected_type = expected_type.unwrap_or(self.type_engine.fresh_infer());
-        let id = self.type_engine.typecheck_expression(expr, expected_type)?;
-        println!("{:?}", self.type_engine.typeinfo(id));
+    ) -> Result<expr::Expression, HirEngineError> {
+        let expected_type = expected_type.unwrap_or_else(|| self.type_engine.fresh_infer());
+        let ctx = self.mk_context();
 
-        Ok(Expression {
-            kind: ExpressionKind::Unit,
-            span: Span::new(0, 0),
+        self.type_engine.typecheck_expression(&ctx, expr, expected_type).map_err(|e| self.mk_type_error(e))?;
+
+        Ok(match &expr.kind {
+            ExpressionKind::BinaryOperation(lhs, op, rhs) => {
+                let lhs = self.evaluate_expression(lhs, None)?;
+                let rhs = self.evaluate_expression(rhs, None)?;
+
+                match (lhs, rhs) {
+                    (expr::Expression::Integer(lhs), expr::Expression::Integer(rhs)) => match op {
+                        BinOp::Add => expr::Expression::Integer(lhs + rhs),
+                        BinOp::Subtract => expr::Expression::Integer(lhs - rhs),
+                        BinOp::Multiply => expr::Expression::Integer(lhs * rhs),
+                        BinOp::Divide => expr::Expression::Integer(lhs / rhs),
+                    },
+                    _ => todo!("actual eval stuff"),
+                }
+            }
+            ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
+            ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
+            ExpressionKind::Path(path) => match path.is_identifier() {
+                Some(ident) => match self.symbol_table.symbols.get(&ident) {
+                    Some(local) => local.value.clone(),
+                    None => return Err(HirEngineError::UnknownIdentifier(ident)),
+                },
+                _ => todo!("path"),
+            },
+            _ => todo!("expr eval"),
         })
     }
 
     pub fn typeinfo(&self, path: &Path) -> Option<TypeInfo> {
-        let id = self.type_engine.typeid_from_path(path)?;
+        let ctx = self.mk_context();
+        let id = self.type_engine.typeid_from_path(&ctx, path)?;
         Some(self.type_engine.typeinfo(id).clone())
+    }
+
+    pub fn varinfo(&self, ident: Identifier) -> Option<&symbol_table::Local<()>> {
+        self.symbol_table.symbols.get(&ident)
+    }
+
+    fn mk_type_error(&self, error: TypeError) -> HirEngineError {
+        HirEngineError::TypeError(error, self.type_engine.clone())
+    }
+
+    fn mk_context(&self) -> Context {
+        Context {
+            aliases: self.aliases.get(&self.current_path).cloned().unwrap_or_default(),
+            bindings: self.symbol_table.symbols.iter().map(|(k, v)| (*k, v.ty)).collect(),
+        }
+    }
+}
+
+struct UseCollector<'a> {
+    aliases: &'a mut HashMap<Path, Path>,
+}
+
+impl<'a> UseCollector<'a> {
+    fn new(aliases: &'a mut HashMap<Path, Path>) -> Self {
+        Self { aliases }
+    }
+}
+
+impl Visitor for UseCollector<'_> {
+    fn visit_use(&mut self, usage: &hir::Use) {
+        let path = usage.path.clone();
+        self.aliases.insert(Path::from_identifier(path.last()), path);
+    }
+
+    fn visit_item(&mut self, item: &Item) {
+        if let ItemKind::Use(usage) = &item.kind {
+            self.visit_use(usage);
+        }
     }
 }

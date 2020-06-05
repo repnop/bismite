@@ -10,19 +10,13 @@ pub struct Type {
 
 impl Type {
     pub fn convert(ty: &ast::Type) -> Self {
-        Self {
-            kind: TypeKind::convert(&ty.kind),
-            span: ty.span,
-        }
+        Self { kind: TypeKind::convert(&ty.kind), span: ty.span }
     }
 
     pub fn convert_optional(ty: &Option<ast::Type>) -> Self {
         match ty {
             Some(ty) => Self::convert(ty),
-            None => Type {
-                kind: TypeKind::Infer,
-                span: Span::new(0, 0),
-            },
+            None => Type { kind: TypeKind::Infer, span: Span::new(0, 0) },
         }
     }
 }

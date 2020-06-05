@@ -33,28 +33,24 @@ pub trait Visitor: Sized {
         walk::ty(self, ty);
     }
 
-    fn visit_function_parameter(&mut self, function_param: &FunctionParameter) {
+    fn visit_function_parameter(&mut self, _: &FunctionParameter) {
         todo!()
     }
 
-    fn visit_block(&mut self, block: &Block) {
+    fn visit_block(&mut self, _: &Block) {
         todo!()
     }
 
-    fn visit_node(&mut self, node: &AstNode) {
-        walk::node(self, node)
-    }
-
-    fn visit_statement(&mut self, statement: &Statement) {
+    fn visit_statement(&mut self, _: &Statement) {
         todo!()
     }
 
-    fn visit_expression(&mut self, expression: &Expression) {
+    fn visit_expression(&mut self, _: &Expression) {
         todo!()
     }
 
     fn visit_use(&mut self, usage: &Use) {
-        todo!()
+        walk::usage(self, usage);
     }
 }
 
@@ -78,19 +74,11 @@ pub mod walk {
     }
 
     pub fn item<V: Visitor>(visitor: &mut V, item: &Item) {
-        match item {
-            Item::Function(f) => visitor.visit_function(f),
-            Item::Module(m) => visitor.visit_module(m),
-            Item::Struct(s) => visitor.visit_struct(s),
-            Item::Use(u) => visitor.visit_use(u),
-        }
-    }
-
-    pub fn node<V: Visitor>(visitor: &mut V, node: &AstNode) {
-        match node {
-            AstNode::Expression(e) => visitor.visit_expression(e),
-            AstNode::Item(i) => visitor.visit_item(i),
-            AstNode::Statement(s) => visitor.visit_statement(s),
+        match &item.kind {
+            ItemKind::Function(f) => visitor.visit_function(f),
+            ItemKind::Module(m) => visitor.visit_module(m),
+            ItemKind::Struct(s) => visitor.visit_struct(s),
+            ItemKind::Use(u) => visitor.visit_use(u),
         }
     }
 
@@ -109,16 +97,14 @@ pub mod walk {
 
     pub fn ty<V: Visitor>(visitor: &mut V, ty: &Type) {
         match &ty.kind {
-            TypeKind::Integer | TypeKind::Bool => todo!("hmm"),
-            TypeKind::Named(path) => visitor.visit_path(path),
+            TypeKind::Integer | TypeKind::Bool | TypeKind::Unit | TypeKind::Infer => todo!("hmm"),
+            TypeKind::Path(path) => visitor.visit_path(path),
         }
     }
 
     pub fn function<V: Visitor>(visitor: &mut V, function: &Function) {
         list!(visitor, visit_function_parameter, &function.parameters);
-        if let Some(ty) = &function.return_ty {
-            visitor.visit_type(ty);
-        }
+        visitor.visit_type(&function.return_type);
         visitor.visit_block(&function.body);
     }
 

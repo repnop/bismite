@@ -67,11 +67,7 @@ pub struct Repl {
 
 impl Repl {
     pub fn new() -> Self {
-        let mut editor = Editor::with_config(
-            Config::builder()
-                .completion_type(CompletionType::Circular)
-                .build(),
-        );
+        let mut editor = Editor::with_config(Config::builder().completion_type(CompletionType::Circular).build());
         editor.set_helper(Some(Helper::new()));
         let _ = editor.load_history("repl_history.bismite");
 
@@ -90,9 +86,7 @@ impl Repl {
                 let _ = self.editor.save_history("repl_history.bismite");
                 std::process::exit(0)
             }
-            LineReturn::Error(e) => {
-                return Err(ReplError::new(String::new(), ReplErrorKind::Readline(e)))
-            }
+            LineReturn::Error(e) => return Err(ReplError::new(String::new(), ReplErrorKind::Readline(e))),
         };
 
         self.editor.add_history_entry(&*line);
@@ -143,30 +137,23 @@ impl Repl {
         for node in nodes {
             match eval_mode {
                 EvalMode::Eval => match node {
-                    AstNode::Item(item) => {
-                        match self.hir_engine.evaluate_item(&hir::Item::convert(&item)) {
+                    AstNode::Item(item) => match self.hir_engine.evaluate_item(&hir::Item::convert(&item)) {
+                        Ok(_) => eval_output = None,
+                        Err(e) => eval_output = Some(format!("{:?}", e)),
+                    },
+                    AstNode::Expression(e) => {
+                        match self.hir_engine.evaluate_expression(&hir::Expression::convert(&e), None) {
+                            Ok(e) => eval_output = Some(format!("{:?}", e)),
+                            Err(e) => eval_output = Some(format!("{:?}", e)),
+                        }
+                    }
+                    AstNode::Statement(ast::Statement { kind: ast::StatementKind::VariableBinding(vb), .. }) => {
+                        match self.hir_engine.evaluate_local(&hir::Local::convert(&vb)) {
                             Ok(_) => eval_output = None,
                             Err(e) => eval_output = Some(format!("{:?}", e)),
                         }
                     }
-                    AstNode::Expression(e) => match self
-                        .hir_engine
-                        .evaluate_expression(&hir::Expression::convert(&e), None)
-                    {
-                        Ok(e) => eval_output = Some(format!("{:?}", e)),
-                        Err(e) => eval_output = Some(format!("{:?}", e)),
-                    },
-                    _ => {
-                        let out = match self.environment.eval(node) {
-                            Ok(out) => out,
-                            Err(e) => {
-                                let code = self.code.clone();
-                                self.reset();
-                                return Err(ReplError::new(code, ReplErrorKind::EvalError(e)));
-                            }
-                        };
-                        eval_output = out;
-                    }
+                    _ => todo!("idfrhgb;oksernhbks"),
                 },
                 EvalMode::Ast => eval_output = Some(format!("{:#?}", node)),
                 EvalMode::Hir => {
@@ -203,22 +190,27 @@ impl Repl {
                 let ident = match s.split(' ').nth(1) {
                     Some(ident) => ident,
                     None => {
-                        println!(
-                            "Must provide an identifier to .varinfo, e.g. .varinfo my_variable"
-                        );
+                        println!("Must provide an identifier to .varinfo, e.g. .varinfo my_variable");
                         return true;
                     }
                 };
-                let valid_ident = Parser::new(ident).identifier().is_ok();
+                let valid_ident = Parser::new(ident).identifier();
 
-                if !valid_ident {
-                    println!("Invalid identifier");
-                    return true;
-                }
-
-                match self.environment.variable_info(ident) {
-                    Some(var_info) => println!("{:?}", var_info),
-                    None => println!("Variable with identifier `{}` not found in scope", ident),
+                match valid_ident {
+                    Ok(valid_ident) => {
+                        let valid_ident = hir::Identifier::convert(&valid_ident);
+                        match self.hir_engine.varinfo(valid_ident) {
+                            Some(var_info) => println!("{:?}", var_info.debug(self.hir_engine.type_engine())),
+                            None => {
+                                println!("Variable with identifier `{}` not found in scope", valid_ident);
+                                return true;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        println!("Invalid identifier");
+                        return true;
+                    }
                 }
             }
             ".typeinfo" => {
@@ -238,9 +230,7 @@ impl Repl {
                 };
 
                 match self.hir_engine.typeinfo(&path) {
-                    Some(type_info) => {
-                        println!("{:?}", type_info.debug(&self.hir_engine.type_engine()))
-                    }
+                    Some(type_info) => println!("{:?}", type_info.debug(&self.hir_engine.type_engine())),
                     None => println!("Type with path `{}` not found in scope", path),
                 }
             }
@@ -264,11 +254,7 @@ impl Repl {
                 let parsed = match Parser::new(&file_contents).module(true) {
                     Ok(mut module) => {
                         module.name = ast::Identifier {
-                            value: std::path::Path::new(&file_path)
-                                .file_stem()
-                                .unwrap()
-                                .to_string_lossy()
-                                .to_string(),
+                            value: std::path::Path::new(&file_path).file_stem().unwrap().to_string_lossy().to_string(),
                             span: codespan::Span::new(0, 0),
                         };
 
@@ -282,10 +268,8 @@ impl Repl {
 
                 let module = hir::Module::convert(&parsed);
                 let span = module.span;
-                if let Err(e) = self.hir_engine.evaluate_item(&hir::Item {
-                    kind: hir::ItemKind::Module(module),
-                    span,
-                }) {
+                if let Err(e) = self.hir_engine.evaluate_item(&hir::Item { kind: hir::ItemKind::Module(module), span })
+                {
                     println!("Error processing module: {:?}", e);
                 }
             }
@@ -334,9 +318,7 @@ struct Helper {
 
 impl Helper {
     fn new() -> Self {
-        Self {
-            hinter: HistoryHinter {},
-        }
+        Self { hinter: HistoryHinter {} }
     }
 }
 

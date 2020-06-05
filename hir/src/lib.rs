@@ -1,5 +1,7 @@
 mod ty;
+pub mod visit;
 
+pub use ast::BinOp;
 use codespan::Span;
 use std::{
     cell::RefCell,
@@ -37,10 +39,7 @@ pub struct Item {
 
 impl Item {
     pub fn convert(item: &ast::Item) -> Self {
-        Self {
-            kind: ItemKind::convert(&item),
-            span: item.span(),
-        }
+        Self { kind: ItemKind::convert(&item), span: item.span() }
     }
 }
 
@@ -49,6 +48,7 @@ pub enum ItemKind {
     Module(Module),
     Function(Function),
     Struct(Struct),
+    Use(Use),
 }
 
 impl ItemKind {
@@ -57,7 +57,20 @@ impl ItemKind {
             ast::Item::Function(f) => ItemKind::Function(Function::convert(f)),
             ast::Item::Module(f) => ItemKind::Module(Module::convert(f)),
             ast::Item::Struct(f) => ItemKind::Struct(Struct::convert(f)),
+            ast::Item::Use(u) => ItemKind::Use(Use::convert(u)),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Use {
+    pub path: Path,
+    pub span: Span,
+}
+
+impl Use {
+    pub fn convert(usage: &ast::Use) -> Self {
+        Self { path: Path::convert(&usage.path), span: usage.span }
     }
 }
 
@@ -87,6 +100,18 @@ impl Path {
         Self::default()
     }
 
+    pub fn from_identifier(ident: Identifier) -> Self {
+        Self { segments: vec![ident] }
+    }
+
+    pub fn last(&self) -> Identifier {
+        self.segments.last().cloned().unwrap()
+    }
+
+    pub fn first(&self) -> Identifier {
+        self.segments.first().cloned().unwrap()
+    }
+
     pub fn with_ident(&self, ident: Identifier) -> Self {
         let mut segments = self.segments.clone();
         segments.push(ident);
@@ -94,18 +119,19 @@ impl Path {
         Self { segments }
     }
 
+    pub fn is_identifier(&self) -> Option<Identifier> {
+        match self.segments.len() {
+            1 => Some(self.first()),
+            _ => None,
+        }
+    }
+
     pub fn pop(&mut self) -> Option<Identifier> {
         self.segments.pop()
     }
 
     pub fn convert(ast: &ast::Path) -> Self {
-        Self {
-            segments: ast
-                .segments
-                .iter()
-                .map(|ident| Identifier::convert(ident))
-                .collect(),
-        }
+        Self { segments: ast.segments.iter().map(|ident| Identifier::convert(ident)).collect() }
     }
 
     pub fn canonicalize(&self) -> Self {
@@ -144,17 +170,17 @@ impl Identifier {
         INTERNER.with(|i| i.borrow().resolve(self.name).unwrap().to_owned())
     }
     pub fn convert(ast: &ast::Identifier) -> Self {
-        Self {
-            name: INTERNER.with(|i| i.borrow_mut().get_or_intern(&ast.value)),
-            span: ast.span,
-        }
+        Self { name: INTERNER.with(|i| i.borrow_mut().get_or_intern(&ast.value)), span: ast.span }
     }
 
     pub fn with_dummy_span(name: Sym) -> Self {
-        Self {
-            name,
-            span: Span::new(0, 0),
-        }
+        Self { name, span: Span::new(0, 0) }
+    }
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        INTERNER.with(|i| write!(f, "{}", i.borrow_mut().resolve(self.name).unwrap()))
     }
 }
 
@@ -208,13 +234,7 @@ impl Local {
         let value = Expression::convert(&vb.value);
         let span = vb.span;
 
-        Self {
-            name,
-            mutable,
-            ty,
-            value,
-            span,
-        }
+        Self { name, mutable, ty, value, span }
     }
 }
 
@@ -235,6 +255,7 @@ impl Expression {
 
 #[derive(Clone, Debug)]
 pub enum ExpressionKind {
+    BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
     Path(Path),
     Integer(i128),
     Boolean(bool),
@@ -250,6 +271,11 @@ impl ExpressionKind {
             ast::ExpressionKind::Boolean(b) => ExpressionKind::Boolean(*b),
             ast::ExpressionKind::Struct(s) => ExpressionKind::Struct(StructExpr::convert(s)),
             ast::ExpressionKind::Unit => ExpressionKind::Unit,
+            ast::ExpressionKind::BinaryOperation(e1, op, e2) => ExpressionKind::BinaryOperation(
+                Box::new(Expression::convert(&e1)),
+                *op,
+                Box::new(Expression::convert(&e2)),
+            ),
             e => todo!("convert {:?}", e),
         }
     }
@@ -265,18 +291,10 @@ pub struct StructExpr {
 impl StructExpr {
     pub fn convert(struct_expr: &ast::StructExpr) -> Self {
         let name = Path::convert(&struct_expr.name);
-        let members = struct_expr
-            .members
-            .iter()
-            .map(StructExprMember::convert)
-            .collect();
+        let members = struct_expr.members.iter().map(StructExprMember::convert).collect();
         let span = struct_expr.span;
 
-        Self {
-            name,
-            members,
-            span,
-        }
+        Self { name, members, span }
     }
 }
 
@@ -293,11 +311,7 @@ impl StructExprMember {
         let expression = Expression::convert(&se_member.expression);
         let span = se_member.span;
 
-        Self {
-            name,
-            expression,
-            span,
-        }
+        Self { name, expression, span }
     }
 }
 
@@ -310,7 +324,7 @@ pub struct Block {
 #[derive(Clone, Debug)]
 pub struct Function {
     pub name: Identifier,
-    pub arguments: Vec<(Identifier, Type)>,
+    pub parameters: Vec<FunctionParameter>,
     pub return_type: Type,
     pub body: Block,
 }
@@ -319,6 +333,13 @@ impl Function {
     pub fn convert(_: &ast::Function) -> Self {
         todo!("function conversion")
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct FunctionParameter {
+    pub name: Identifier,
+    pub ty: Type,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]
@@ -340,7 +361,7 @@ impl Struct {
 
 impl Display for Struct {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "struct {} {{", self.name.string())?;
+        writeln!(f, "struct {} {{", self.name)?;
         for member in &self.members {
             writeln!(f, "    {}", member)?;
         }
@@ -357,16 +378,12 @@ pub struct StructMember {
 
 impl StructMember {
     pub fn convert(member: &ast::StructMember) -> Self {
-        Self {
-            name: Identifier::convert(&member.name),
-            ty: Type::convert(&member.ty),
-            span: member.span,
-        }
+        Self { name: Identifier::convert(&member.name), ty: Type::convert(&member.ty), span: member.span }
     }
 }
 
 impl Display for StructMember {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.name.string(), self.ty.kind)
+        write!(f, "{}: {}", self.name, self.ty.kind)
     }
 }

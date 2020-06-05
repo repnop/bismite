@@ -28,6 +28,7 @@ pub enum Item {
     Function(Function),
     Struct(Struct),
     Module(Module),
+    Use(Use),
 }
 
 impl Item {
@@ -36,6 +37,7 @@ impl Item {
             Item::Function(f) => f.span,
             Item::Struct(s) => s.span,
             Item::Module(m) => m.span,
+            Item::Use(u) => u.span,
         }
     }
 }
@@ -57,13 +59,6 @@ pub struct FunctionParameter {
 }
 
 #[derive(Clone, Debug)]
-pub struct StructMember {
-    pub name: Identifier,
-    pub ty: Type,
-    pub span: Span,
-}
-
-#[derive(Clone, Debug)]
 pub struct Block {
     pub items: Vec<Item>,
     pub statements: Vec<Statement>,
@@ -75,6 +70,19 @@ pub struct Block {
 pub struct Struct {
     pub name: Identifier,
     pub members: Vec<StructMember>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct StructMember {
+    pub name: Identifier,
+    pub ty: Type,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct Use {
+    pub path: Path,
     pub span: Span,
 }
 
@@ -142,19 +150,41 @@ pub struct Identifier {
 
 impl Identifier {
     pub fn dummy() -> Self {
-        Self {
-            value: String::new(),
-            span: Span::new(0, 0),
-        }
+        Self { value: String::new(), span: Span::new(0, 0) }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BinOp {
-    Plus,
-    Minus,
-    Mult,
+    Add,
+    Subtract,
+    Multiply,
     Divide,
+}
+
+impl BinOp {
+    pub fn is_arith_op(self) -> bool {
+        match self {
+            BinOp::Add | BinOp::Subtract | BinOp::Multiply | BinOp::Divide => true,
+        }
+    }
+
+    pub fn is_logic_op(self) -> bool {
+        match self {
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for BinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinOp::Add => write!(f, "+"),
+            BinOp::Subtract => write!(f, "-"),
+            BinOp::Multiply => write!(f, "*"),
+            BinOp::Divide => write!(f, "/"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

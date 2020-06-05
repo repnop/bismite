@@ -1,4 +1,6 @@
-use hir::{Expression, ExpressionKind, Identifier, Item, ItemKind, Path, Struct, StructExpr, Sym};
+use hir::{
+    BinOp, Expression, ExpressionKind, Identifier, Item, ItemKind, Path, Struct, StructExpr, Sym, Type, TypeKind,
+};
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Formatter},
@@ -7,24 +9,50 @@ use std::{
 pub type Result<T> = std::result::Result<T, TypeError>;
 pub type TypeId = usize;
 
+type Aliases = HashMap<Path, Path>;
+
+pub struct Context {
+    pub aliases: Aliases,
+    pub bindings: HashMap<Identifier, TypeId>,
+}
+
 pub enum TypeError {
     UnknownType(Path),
     MismatchedTypes { wanted: TypeInfo, have: TypeInfo },
+    UnknownBinOp { lhs: TypeInfo, op: BinOp, rhs: TypeInfo },
+    UnknownIdentifier(Identifier),
 }
 
-impl Debug for TypeError {
+impl TypeError {
+    pub fn debug<'a>(&'a self, engine: &'a TypeEngine) -> TypeErrorDebug<'a> {
+        TypeErrorDebug { error: self, engine }
+    }
+}
+
+pub struct TypeErrorDebug<'a> {
+    error: &'a TypeError,
+    engine: &'a TypeEngine,
+}
+
+impl Debug for TypeErrorDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
+        match &self.error {
             TypeError::UnknownType(id) => write!(f, "Unknown type: {}", id.to_string()),
             TypeError::MismatchedTypes { wanted, have } => write!(
                 f,
                 "Type mismatch: expected {:?}, but found {:?}",
-                wanted, have
+                wanted.debug(self.engine),
+                have.debug(self.engine)
             ),
+            TypeError::UnknownBinOp { lhs, op, rhs } => {
+                write!(f, "No implmentation for {} {} {}", lhs.name(self.engine), op, rhs.name(self.engine))
+            }
+            TypeError::UnknownIdentifier(ident) => write!(f, "UnknownIdentifier({})", ident),
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TypeEngine {
     types: Vec<TypeInfo>,
     name_map: HashMap<Path, TypeId>,
@@ -36,26 +64,23 @@ impl TypeEngine {
     }
 
     pub fn typeinfo(&self, id: TypeId) -> &TypeInfo {
-        &self.types[id]
+        match &self.types[id] {
+            TypeInfo::Ref(r) => self.typeinfo(*r),
+            info => info,
+        }
     }
 
-    pub fn unify(&mut self, a: TypeId, b: TypeId) -> Result<TypeId> {
+    pub fn unify(&mut self, ctx: &Context, a: TypeId, b: TypeId) -> Result<TypeId> {
         match (self.types[a].clone(), self.types[b].clone()) {
             (TypeInfo::Bool, TypeInfo::Bool) => Ok(self.bool()),
             (TypeInfo::Integer, TypeInfo::Integer) => Ok(self.integer()),
             (
-                TypeInfo::Struct {
-                    full_path: full_path1,
-                    members: members1,
-                    ..
-                },
-                TypeInfo::Struct {
-                    full_path: full_path2,
-                    members: members2,
-                    ..
-                },
+                TypeInfo::Struct { full_path: full_path1, members: members1, .. },
+                TypeInfo::Struct { full_path: full_path2, members: members2, .. },
             ) => {
-                // members should be forced to be equal by here if they're the same type
+                let full_path1 = ctx.aliases.get(&full_path1).unwrap_or(&full_path1);
+                let full_path2 = ctx.aliases.get(&full_path2).unwrap_or(&full_path2);
+
                 if full_path1 != full_path2 {
                     return Err(TypeError::MismatchedTypes {
                         wanted: self.types[a].clone(),
@@ -66,7 +91,7 @@ impl TypeEngine {
                 for (i, &a) in members1.iter() {
                     let b = members2[i];
 
-                    self.unify(a, b)?;
+                    self.unify(ctx, a, b)?;
                 }
 
                 Ok(a)
@@ -79,8 +104,8 @@ impl TypeEngine {
                 self.types[b] = TypeInfo::Ref(a);
                 Ok(a)
             }
-            (TypeInfo::Ref(a), _) => self.unify(a, b),
-            (_, TypeInfo::Ref(b)) => self.unify(a, b),
+            (TypeInfo::Ref(a), _) => self.unify(ctx, a, b),
+            (_, TypeInfo::Ref(b)) => self.unify(ctx, a, b),
             (a, b) => Err(TypeError::MismatchedTypes { wanted: a, have: b }),
         }
     }
@@ -90,22 +115,89 @@ impl TypeEngine {
         self.types.len() - 1
     }
 
-    pub fn typecheck_expression(&mut self, expr: &Expression, expected: TypeId) -> Result<TypeId> {
+    pub fn typecheck_expression(&mut self, ctx: &Context, expr: &Expression, expected: TypeId) -> Result<TypeId> {
         match &expr.kind {
-            ExpressionKind::Integer(_) => self.unify(self.integer(), expected),
-            ExpressionKind::Boolean(_) => self.unify(self.bool(), expected),
+            ExpressionKind::Integer(_) => self.unify(ctx, self.integer(), expected),
+            ExpressionKind::Boolean(_) => self.unify(ctx, self.bool(), expected),
             ExpressionKind::Struct(struct_expr) => {
-                let have = self.gen_struct_typeinfo(&struct_expr)?;
-                let want = match self.name_map.get(&struct_expr.name) {
-                    Some(id) => *id,
+                let have = self.gen_struct_typeinfo(ctx, struct_expr)?;
+                let want = match self.resolve_two_way(ctx, &struct_expr.name) {
+                    Some(id) => id,
                     None => return Err(TypeError::UnknownType(struct_expr.name.clone())),
                 };
 
-                self.unify(want, have)?;
-                self.unify(want, expected)
+                self.unify(ctx, want, have)?;
+                self.unify(ctx, want, expected)
             }
-            ExpressionKind::Unit => self.unify(self.unit(), expected),
-            ExpressionKind::Path(_) => todo!("path typecheck"),
+            ExpressionKind::Unit => self.unify(ctx, self.unit(), expected),
+            ExpressionKind::Path(path) => match path.is_identifier() {
+                Some(ident) => match ctx.bindings.get(&ident) {
+                    Some(id) => Ok(*id),
+                    None => Err(TypeError::UnknownIdentifier(ident)),
+                },
+                None => todo!("non ident path check"),
+            },
+            ExpressionKind::BinaryOperation(original_lhs, op, original_rhs) => {
+                match (&original_lhs.kind, op, &original_rhs.kind) {
+                    (ExpressionKind::Integer(_), op, ExpressionKind::Integer(_)) if op.is_arith_op() => {
+                        Ok(self.integer())
+                    }
+                    (ExpressionKind::Boolean(_), op, ExpressionKind::Boolean(_)) if op.is_logic_op() => Ok(self.bool()),
+                    (ExpressionKind::Path(path), &op, _) => match path.is_identifier() {
+                        Some(ident) => match ctx.bindings.get(&ident) {
+                            Some(&id) => {
+                                let infer = self.fresh_infer();
+                                let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
+                                let lhs = self.typeinfo(id);
+
+                                match (lhs, self.typeinfo(rhs_id)) {
+                                    (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
+                                    (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
+                                    (lhs, rhs) => {
+                                        Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() })
+                                    }
+                                }
+                            }
+                            None => Err(TypeError::UnknownIdentifier(ident)),
+                        },
+                        None => todo!("other path checking"),
+                    },
+                    (ExpressionKind::BinaryOperation(_, _, _), &op, _) => {
+                        let infer = self.fresh_infer();
+                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
+
+                        let infer = self.fresh_infer();
+                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
+
+                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
+                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
+                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
+                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
+                        }
+                    }
+                    (_, &op, ExpressionKind::BinaryOperation(_, _, _)) => {
+                        let infer = self.fresh_infer();
+                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
+
+                        let infer = self.fresh_infer();
+                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
+
+                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
+                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
+                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
+                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
+                        }
+                    }
+                    (_, &op, _) => {
+                        let infer = self.fresh_infer();
+                        let lhs = self.typecheck_expression(ctx, original_lhs, infer)?;
+
+                        let infer = self.fresh_infer();
+                        let rhs = self.typecheck_expression(ctx, original_rhs, infer)?;
+                        Err(TypeError::UnknownBinOp { lhs: self.types[lhs].clone(), op, rhs: self.types[rhs].clone() })
+                    }
+                }
+            }
         }
     }
 
@@ -116,7 +208,7 @@ impl TypeEngine {
         Ok(())
     }
 
-    pub fn register_struct(&mut self, path: &Path, strukt: &Struct) -> Result<()> {
+    pub fn register_struct(&mut self, ctx: &Context, path: &Path, strukt: &Struct) -> Result<()> {
         let struct_path = path.with_ident(strukt.name);
 
         let type_info = TypeInfo::Struct {
@@ -128,8 +220,8 @@ impl TypeEngine {
                         let id = match &m.ty.kind {
                             hir::TypeKind::Integer => self.integer(),
                             hir::TypeKind::Bool => self.bool(),
-                            hir::TypeKind::Path(path) => match self.name_map.get(&path) {
-                                Some(id) => *id,
+                            hir::TypeKind::Path(path) => match self.resolve_two_way(ctx, path) {
+                                Some(id) => id,
                                 None => return Err(TypeError::UnknownType(path.clone())),
                             },
                             _ => todo!("more type stuff"),
@@ -148,11 +240,23 @@ impl TypeEngine {
         Ok(())
     }
 
-    pub fn typeid_from_path(&self, path: &Path) -> Option<TypeId> {
-        self.name_map.get(path).copied()
+    pub fn typeid_from_path(&self, ctx: &Context, path: &Path) -> Option<TypeId> {
+        self.name_map.get(ctx.aliases.get(path).unwrap_or(path)).copied()
     }
 
-    fn gen_struct_typeinfo(&mut self, se: &StructExpr) -> Result<TypeId> {
+    pub fn from_hir_type(&mut self, ctx: &Context, ty: &Type) -> Result<TypeId> {
+        match &ty.kind {
+            TypeKind::Integer => Ok(self.integer()),
+            TypeKind::Bool => Ok(self.bool()),
+            TypeKind::Path(path) => {
+                self.typeid_from_path(ctx, path).ok_or_else(|| TypeError::UnknownType(path.clone()))
+            }
+            TypeKind::Infer => Ok(self.fresh_infer()),
+            TypeKind::Unit => Ok(self.unit()),
+        }
+    }
+
+    fn gen_struct_typeinfo(&mut self, ctx: &Context, se: &StructExpr) -> Result<TypeId> {
         let type_info = TypeInfo::Struct {
             full_path: se.name.clone(),
             members: se
@@ -160,16 +264,17 @@ impl TypeEngine {
                 .iter()
                 .map(|member| {
                     let id = self.fresh_infer();
-                    Ok((
-                        member.name,
-                        self.typecheck_expression(&member.expression, id)?,
-                    ))
+                    Ok((member.name, self.typecheck_expression(ctx, &member.expression, id)?))
                 })
                 .collect::<Result<_>>()?,
         };
 
         self.types.push(type_info);
         Ok(self.types.len() - 1)
+    }
+
+    fn resolve_two_way(&self, ctx: &Context, path: &Path) -> Option<TypeId> {
+        self.name_map.get(ctx.aliases.get(path).unwrap_or(path)).copied()
     }
 
     fn integer(&self) -> TypeId {
@@ -187,10 +292,7 @@ impl TypeEngine {
 
 impl Default for TypeEngine {
     fn default() -> Self {
-        Self {
-            types: vec![TypeInfo::Integer, TypeInfo::Bool, TypeInfo::Unit],
-            name_map: HashMap::new(),
-        }
+        Self { types: vec![TypeInfo::Integer, TypeInfo::Bool, TypeInfo::Unit], name_map: HashMap::new() }
     }
 }
 
@@ -198,10 +300,7 @@ impl Default for TypeEngine {
 pub enum TypeInfo {
     Bool,
     Integer,
-    Struct {
-        full_path: Path,
-        members: HashMap<Identifier, TypeId>,
-    },
+    Struct { full_path: Path, members: HashMap<Identifier, TypeId> },
     Infer,
     Ref(TypeId),
     Unit,
@@ -210,6 +309,17 @@ pub enum TypeInfo {
 impl TypeInfo {
     pub fn debug<'a>(&'a self, engine: &'a TypeEngine) -> TypeInfoDebug<'a> {
         TypeInfoDebug { info: self, engine }
+    }
+
+    pub fn name(&self, engine: &TypeEngine) -> String {
+        match self {
+            TypeInfo::Bool => String::from("Bool"),
+            TypeInfo::Integer => String::from("Integer"),
+            TypeInfo::Unit => String::from("Unit"),
+            TypeInfo::Struct { full_path, .. } => full_path.to_string(),
+            TypeInfo::Ref(r) => engine.typeinfo(*r).name(engine),
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -223,23 +333,16 @@ impl Debug for TypeInfoDebug<'_> {
         match &self.info {
             TypeInfo::Bool => write!(f, "Bool"),
             TypeInfo::Integer => write!(f, "Int"),
-            TypeInfo::Struct {
-                full_path, members, ..
-            } => {
-                writeln!(f, "{} {{", full_path)?;
+            TypeInfo::Struct { full_path, members, .. } => {
+                writeln!(f, "Struct({} {{", full_path)?;
                 for (ident, &ty) in members {
-                    writeln!(
-                        f,
-                        "    {}: {:?},",
-                        ident.string(),
-                        self.engine.typeinfo(ty).debug(self.engine)
-                    )?;
+                    writeln!(f, " {}: {:?},", ident, self.engine.typeinfo(ty).debug(self.engine))?;
                 }
-                write!(f, "}}")
+                write!(f, "}})")
             }
             TypeInfo::Infer => write!(f, "_"),
             TypeInfo::Unit => write!(f, "Unit"),
-            TypeInfo::Ref(_) => write!(f, "<type reference>"),
+            TypeInfo::Ref(id) => write!(f, "{:?}", self.engine.typeinfo(*id).debug(self.engine)),
         }
     }
 }
