@@ -3,7 +3,9 @@ struct Foo {
 }
 
 module qux {
+    use test::Foo;
+    
     struct Qux {
-        foo: test::Foo,
+        foo: Foo,
     }
 }

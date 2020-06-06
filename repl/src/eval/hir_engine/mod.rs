@@ -15,6 +15,7 @@ use symbol_table::SymbolTable;
 use typecheck::{Context, TypeEngine, TypeError, TypeId, TypeInfo};
 
 pub enum HirEngineError {
+    NotMutable(Identifier),
     TypeError(TypeError, TypeEngine),
     UnknownImport(Path),
     UnknownIdentifier(Identifier),
@@ -23,6 +24,7 @@ pub enum HirEngineError {
 impl Debug for HirEngineError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
+            HirEngineError::NotMutable(ident) => write!(f, "Local `{}` was not declared mutable", ident),
             HirEngineError::TypeError(e, engine) => write!(f, "{:?}", e.debug(engine)),
             HirEngineError::UnknownImport(path) => write!(f, "UnknownImport({})", path),
             HirEngineError::UnknownIdentifier(ident) => write!(f, "UnknownIdentifier({})", ident),
@@ -139,8 +141,51 @@ impl HirEngine {
                 },
                 _ => todo!("path"),
             },
+            ExpressionKind::Struct(s) => expr::Expression::Struct(
+                s.name.clone(),
+                s.members
+                    .iter()
+                    .map(|member| Ok((member.name, self.evaluate_expression(&member.expression, None)?)))
+                    .collect::<Result<_, _>>()?,
+            ),
+            ExpressionKind::FieldAccess(lhs, ident) => {
+                let s = self.evaluate_expression(lhs, None)?;
+
+                match s {
+                    expr::Expression::Struct(_, members) => members.get(ident).cloned().unwrap(),
+                    _ => unreachable!(),
+                }
+            }
+            ExpressionKind::Assignment(lhs, rhs) => {
+                let rhs = self.evaluate_expression(rhs, None)?;
+                *self.get_place(lhs)? = rhs;
+
+                expr::Expression::Unit
+            }
             _ => todo!("expr eval"),
         })
+    }
+
+    fn get_place(&mut self, expr: &Expression) -> Result<&mut expr::Expression, HirEngineError> {
+        match &expr.kind {
+            ExpressionKind::FieldAccess(lhs, field) => {
+                let lhs = self.get_place(lhs)?;
+
+                match lhs {
+                    expr::Expression::Struct(_, members) => Ok(members.get_mut(field).unwrap()),
+                    _ => unreachable!(),
+                }
+            }
+            ExpressionKind::Path(path) => match path.is_identifier() {
+                Some(ident) => match self.symbol_table.symbols.get_mut(&ident) {
+                    Some(e) if e.mutable => Ok(&mut e.value),
+                    Some(_) => Err(HirEngineError::NotMutable(ident)),
+                    None => unreachable!(),
+                },
+                None => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
     }
 
     pub fn typeinfo(&self, path: &Path) -> Option<TypeInfo> {

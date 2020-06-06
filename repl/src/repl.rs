@@ -143,16 +143,14 @@ impl Repl {
                     },
                     AstNode::Expression(e) => {
                         match self.hir_engine.evaluate_expression(&hir::Expression::convert(&e), None) {
-                            Ok(e) => eval_output = Some(format!("{:?}", e)),
+                            Ok(e) => eval_output = Some(format!("{:?}", e.debug())),
                             Err(e) => eval_output = Some(format!("{:?}", e)),
                         }
                     }
-                    AstNode::Statement(ast::Statement { kind: ast::StatementKind::VariableBinding(vb), .. }) => {
-                        match self.hir_engine.evaluate_local(&hir::Local::convert(&vb)) {
-                            Ok(_) => eval_output = None,
-                            Err(e) => eval_output = Some(format!("{:?}", e)),
-                        }
-                    }
+                    AstNode::Statement(s) => match self.hir_engine.evaluate_statement(&hir::Statement::convert(&s)) {
+                        Ok(_) => eval_output = None,
+                        Err(e) => eval_output = Some(format!("{:?}", e)),
+                    },
                     _ => todo!("idfrhgb;oksernhbks"),
                 },
                 EvalMode::Ast => eval_output = Some(format!("{:#?}", node)),

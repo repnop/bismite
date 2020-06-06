@@ -202,6 +202,12 @@ pub struct Statement {
     pub span: Span,
 }
 
+impl Statement {
+    pub fn convert(statement: &ast::Statement) -> Self {
+        Self { kind: StatementKind::convert(&statement.kind), span: statement.span }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum StatementKind {
     Local(Local),
@@ -255,10 +261,12 @@ impl Expression {
 
 #[derive(Clone, Debug)]
 pub enum ExpressionKind {
+    Assignment(Box<Expression>, Box<Expression>),
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
-    Path(Path),
-    Integer(i128),
     Boolean(bool),
+    FieldAccess(Box<Expression>, Identifier),
+    Integer(i128),
+    Path(Path),
     Struct(StructExpr),
     Unit,
 }
@@ -266,16 +274,22 @@ pub enum ExpressionKind {
 impl ExpressionKind {
     pub fn convert(kind: &ast::ExpressionKind) -> Self {
         match kind {
-            ast::ExpressionKind::Path(path) => ExpressionKind::Path(Path::convert(path)),
-            ast::ExpressionKind::Integer(i) => ExpressionKind::Integer(*i),
-            ast::ExpressionKind::Boolean(b) => ExpressionKind::Boolean(*b),
-            ast::ExpressionKind::Struct(s) => ExpressionKind::Struct(StructExpr::convert(s)),
-            ast::ExpressionKind::Unit => ExpressionKind::Unit,
+            ast::ExpressionKind::Assignment(lhs, rhs) => {
+                ExpressionKind::Assignment(Box::new(Expression::convert(lhs)), Box::new(Expression::convert(rhs)))
+            }
             ast::ExpressionKind::BinaryOperation(e1, op, e2) => ExpressionKind::BinaryOperation(
                 Box::new(Expression::convert(&e1)),
                 *op,
                 Box::new(Expression::convert(&e2)),
             ),
+            ast::ExpressionKind::Boolean(b) => ExpressionKind::Boolean(*b),
+            ast::ExpressionKind::FieldAccess(e, ident) => {
+                ExpressionKind::FieldAccess(Box::new(Expression::convert(e)), Identifier::convert(ident))
+            }
+            ast::ExpressionKind::Integer(i) => ExpressionKind::Integer(*i),
+            ast::ExpressionKind::Path(path) => ExpressionKind::Path(Path::convert(path)),
+            ast::ExpressionKind::Struct(s) => ExpressionKind::Struct(StructExpr::convert(s)),
+            ast::ExpressionKind::Unit => ExpressionKind::Unit,
             e => todo!("convert {:?}", e),
         }
     }

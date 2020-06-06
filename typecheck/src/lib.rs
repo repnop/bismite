@@ -17,10 +17,12 @@ pub struct Context {
 }
 
 pub enum TypeError {
-    UnknownType(Path),
     MismatchedTypes { wanted: TypeInfo, have: TypeInfo },
+    NoField(TypeInfo, Identifier),
+    NotValidRhs,
     UnknownBinOp { lhs: TypeInfo, op: BinOp, rhs: TypeInfo },
     UnknownIdentifier(Identifier),
+    UnknownType(Path),
 }
 
 impl TypeError {
@@ -37,6 +39,7 @@ pub struct TypeErrorDebug<'a> {
 impl Debug for TypeErrorDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.error {
+            TypeError::NoField(info, field) => write!(f, "No field `{}` on type {}", field, info.name(self.engine)),
             TypeError::UnknownType(id) => write!(f, "Unknown type: {}", id.to_string()),
             TypeError::MismatchedTypes { wanted, have } => write!(
                 f,
@@ -48,6 +51,7 @@ impl Debug for TypeErrorDebug<'_> {
                 write!(f, "No implmentation for {} {} {}", lhs.name(self.engine), op, rhs.name(self.engine))
             }
             TypeError::UnknownIdentifier(ident) => write!(f, "UnknownIdentifier({})", ident),
+            TypeError::NotValidRhs => write!(f, "Not a valid right hand side expression"),
         }
     }
 }
@@ -137,6 +141,41 @@ impl TypeEngine {
                 },
                 None => todo!("non ident path check"),
             },
+            ExpressionKind::FieldAccess(lhs, ident) => {
+                let infer = self.fresh_infer();
+                let lhs_id = self.typecheck_expression(ctx, lhs, infer)?;
+                let type_info = self.typeinfo(lhs_id);
+
+                match type_info {
+                    TypeInfo::Struct { members, .. } if members.get(ident).is_some() => {
+                        Ok(members.get(ident).copied().unwrap())
+                    }
+                    _ => Err(TypeError::NoField(type_info.clone(), *ident)),
+                }
+            }
+            ExpressionKind::Assignment(lhs, rhs) => {
+                let lhs_id = match &lhs.kind {
+                    ExpressionKind::FieldAccess(_, _) => {
+                        let infer = self.fresh_infer();
+                        self.typecheck_expression(ctx, lhs, infer)?
+                    }
+                    ExpressionKind::Path(path) => match path.is_identifier() {
+                        Some(ident) => match ctx.bindings.get(&ident) {
+                            Some(&id) => id,
+                            None => return Err(TypeError::UnknownIdentifier(ident)),
+                        },
+                        None => return Err(TypeError::NotValidRhs),
+                    },
+                    _ => return Err(TypeError::NotValidRhs),
+                };
+
+                let infer = self.fresh_infer();
+                let rhs_id = self.typecheck_expression(ctx, rhs, infer)?;
+
+                self.unify(ctx, lhs_id, rhs_id)?;
+
+                Ok(self.unit())
+            }
             ExpressionKind::BinaryOperation(original_lhs, op, original_rhs) => {
                 match (&original_lhs.kind, op, &original_rhs.kind) {
                     (ExpressionKind::Integer(_), op, ExpressionKind::Integer(_)) if op.is_arith_op() => {
@@ -308,7 +347,7 @@ pub enum TypeInfo {
 
 impl TypeInfo {
     pub fn debug<'a>(&'a self, engine: &'a TypeEngine) -> TypeInfoDebug<'a> {
-        TypeInfoDebug { info: self, engine }
+        TypeInfoDebug { info: self, engine, indent_level: 0 }
     }
 
     pub fn name(&self, engine: &TypeEngine) -> String {
@@ -326,6 +365,14 @@ impl TypeInfo {
 pub struct TypeInfoDebug<'a> {
     info: &'a TypeInfo,
     engine: &'a TypeEngine,
+    indent_level: usize,
+}
+
+impl<'a> TypeInfoDebug<'a> {
+    pub fn add_indent(mut self, level: usize) -> Self {
+        self.indent_level += level;
+        self
+    }
 }
 
 impl Debug for TypeInfoDebug<'_> {
@@ -334,11 +381,18 @@ impl Debug for TypeInfoDebug<'_> {
             TypeInfo::Bool => write!(f, "Bool"),
             TypeInfo::Integer => write!(f, "Int"),
             TypeInfo::Struct { full_path, members, .. } => {
-                writeln!(f, "Struct({} {{", full_path)?;
+                writeln!(f, "{} {{", full_path)?;
                 for (ident, &ty) in members {
-                    writeln!(f, " {}: {:?},", ident, self.engine.typeinfo(ty).debug(self.engine))?;
+                    writeln!(
+                        f,
+                        "{:<width$}{}: {:?}, ",
+                        "",
+                        ident,
+                        self.engine.typeinfo(ty).debug(self.engine).add_indent(1),
+                        width = (self.indent_level + 1) * 4
+                    )?;
                 }
-                write!(f, "}})")
+                write!(f, "{:<width$}}}", "", width = self.indent_level * 4)
             }
             TypeInfo::Infer => write!(f, "_"),
             TypeInfo::Unit => write!(f, "Unit"),
