@@ -440,6 +440,8 @@ impl<'a> Parser<'a> {
     pub fn path(&mut self) -> Result<Path> {
         let mut segments = Vec::new();
 
+        segments.push(self.identifier()?);
+
         while let Ok(Token { kind: TokenKind::Identifier(_), .. }) = self.peek() {
             segments.push(self.identifier()?);
 

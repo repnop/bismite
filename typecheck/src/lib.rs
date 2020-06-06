@@ -41,12 +41,9 @@ impl Debug for TypeErrorDebug<'_> {
         match &self.error {
             TypeError::NoField(info, field) => write!(f, "No field `{}` on type {}", field, info.name(self.engine)),
             TypeError::UnknownType(id) => write!(f, "Unknown type: {}", id.to_string()),
-            TypeError::MismatchedTypes { wanted, have } => write!(
-                f,
-                "Type mismatch: expected {:?}, but found {:?}",
-                wanted.debug(self.engine),
-                have.debug(self.engine)
-            ),
+            TypeError::MismatchedTypes { wanted, have } => {
+                write!(f, "Type mismatch: expected {}, but found {}", wanted.name(self.engine), have.name(self.engine))
+            }
             TypeError::UnknownBinOp { lhs, op, rhs } => {
                 write!(f, "No implmentation for {} {} {}", lhs.name(self.engine), op, rhs.name(self.engine))
             }
@@ -353,7 +350,7 @@ impl TypeInfo {
     pub fn name(&self, engine: &TypeEngine) -> String {
         match self {
             TypeInfo::Bool => String::from("Bool"),
-            TypeInfo::Integer => String::from("Integer"),
+            TypeInfo::Integer => String::from("Int"),
             TypeInfo::Unit => String::from("Unit"),
             TypeInfo::Struct { full_path, .. } => full_path.to_string(),
             TypeInfo::Ref(r) => engine.typeinfo(*r).name(engine),
