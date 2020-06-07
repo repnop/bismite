@@ -14,6 +14,7 @@ use typecheck::{Context, TypeEngine, TypeError, TypeId, TypeInfo};
 
 pub enum HirEngineError {
     NotMutable(Identifier),
+    RecursionLimitReached,
     TypeError(Box<TypeError>, Box<TypeEngine>),
     UnknownImport(Path),
     UnknownIdentifier(Identifier),
@@ -23,6 +24,7 @@ impl Debug for HirEngineError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             HirEngineError::NotMutable(ident) => write!(f, "Local `{}` was not declared mutable", ident),
+            HirEngineError::RecursionLimitReached => write!(f, "Reached recursion limit while evaluating expression"),
             HirEngineError::TypeError(e, engine) => write!(f, "{:?}", e.debug(engine)),
             HirEngineError::UnknownImport(path) => write!(f, "UnknownImport({})", path),
             HirEngineError::UnknownIdentifier(ident) => write!(f, "UnknownIdentifier({})", ident),
@@ -30,7 +32,6 @@ impl Debug for HirEngineError {
     }
 }
 
-#[derive(Default)]
 pub struct HirEngine {
     type_engine: TypeEngine,
     symbol_table: SymbolTable,
@@ -38,6 +39,25 @@ pub struct HirEngine {
     aliases: HashMap<Path, HashMap<Path, Path>>,
     functions: HashMap<Path, (hir::Function, TypeId)>,
     values: Vec<expr::Expression>,
+    do_typechecking: bool,
+    expr_eval_count: usize,
+    expr_eval_limit: usize,
+}
+
+impl Default for HirEngine {
+    fn default() -> Self {
+        Self {
+            type_engine: Default::default(),
+            symbol_table: Default::default(),
+            current_path: Default::default(),
+            aliases: Default::default(),
+            functions: Default::default(),
+            values: Default::default(),
+            do_typechecking: true,
+            expr_eval_count: 0,
+            expr_eval_limit: 100,
+        }
+    }
 }
 
 impl HirEngine {
@@ -132,69 +152,86 @@ impl HirEngine {
         let expected_type = expected_type.unwrap_or_else(|| self.type_engine.fresh_infer());
         let ctx = self.mk_context();
 
-        self.type_engine.typecheck_expression(&ctx, expr, expected_type).map_err(|e| self.mk_type_error(e))?;
+        self.expr_eval_count += 1;
+        if self.expr_eval_count > self.expr_eval_limit {
+            self.do_typechecking = true;
+            return Err(HirEngineError::RecursionLimitReached);
+        }
 
-        Ok(match &expr.kind {
-            ExpressionKind::Block(block) => self.evaluate_block(block, Some(expected_type))?,
-            ExpressionKind::BinaryOperation(lhs, op, rhs) => {
-                let lhs = self.evaluate_expression(lhs, None)?;
-                let rhs = self.evaluate_expression(rhs, None)?;
+        if self.do_typechecking {
+            self.type_engine.typecheck_expression(&ctx, expr, expected_type).map_err(|e| self.mk_type_error(e))?;
+        }
 
-                match (lhs, rhs) {
-                    (expr::Expression::Integer(lhs), expr::Expression::Integer(rhs)) => match op {
-                        BinOp::Add => expr::Expression::Integer(lhs + rhs),
-                        BinOp::Subtract => expr::Expression::Integer(lhs - rhs),
-                        BinOp::Multiply => expr::Expression::Integer(lhs * rhs),
-                        BinOp::Divide => expr::Expression::Integer(lhs / rhs),
-                        BinOp::LogicalAnd => todo!(),
-                    },
-                    _ => todo!("actual eval stuff"),
+        self.do_typechecking = false;
+
+        let res = (|| {
+            Ok(match &expr.kind {
+                ExpressionKind::Block(block) => self.evaluate_block(block, Some(expected_type))?,
+                ExpressionKind::BinaryOperation(lhs, op, rhs) => {
+                    let lhs = self.evaluate_expression(lhs, None)?;
+                    let rhs = self.evaluate_expression(rhs, None)?;
+
+                    match (lhs, rhs) {
+                        (expr::Expression::Integer(lhs), expr::Expression::Integer(rhs)) => match op {
+                            BinOp::Add => expr::Expression::Integer(lhs + rhs),
+                            BinOp::Subtract => expr::Expression::Integer(lhs - rhs),
+                            BinOp::Multiply => expr::Expression::Integer(lhs * rhs),
+                            BinOp::Divide => expr::Expression::Integer(lhs / rhs),
+                            BinOp::LogicalAnd => todo!(),
+                        },
+                        _ => todo!("actual eval stuff"),
+                    }
                 }
-            }
-            ExpressionKind::FnCall(lhs, args) => self.evaluate_fn_call(lhs, args, Some(expected_type))?,
-            ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
-            ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
-            ExpressionKind::Path(path) => match path.is_identifier() {
-                Some(ident) => match self.symbol_table.resolve_binding(ident) {
-                    Some(local) => self.values[local.value.0].clone(),
-                    None => match self.functions.get(path) {
+                ExpressionKind::FnCall(lhs, args) => self.evaluate_fn_call(lhs, args, Some(expected_type))?,
+                ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
+                ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
+                ExpressionKind::Path(path) => match path.is_identifier() {
+                    Some(ident) => match self.symbol_table.resolve_binding(ident) {
+                        Some(local) => self.values[local.value.0].clone(),
+                        None => match self.functions.get(path) {
+                            Some(_) => expr::Expression::Function(path.clone()),
+                            None => return Err(HirEngineError::UnknownIdentifier(ident)),
+                        },
+                    },
+                    _ => match self.functions.get(path) {
                         Some(_) => expr::Expression::Function(path.clone()),
-                        None => return Err(HirEngineError::UnknownIdentifier(ident)),
+                        _ => todo!("path stuff"),
                     },
                 },
-                _ => match self.functions.get(path) {
-                    Some(_) => expr::Expression::Function(path.clone()),
-                    _ => todo!("path stuff"),
-                },
-            },
-            ExpressionKind::Struct(s) => expr::Expression::Struct(
-                s.name.clone(),
-                s.members
-                    .iter()
-                    .map(|member| {
-                        let expr = self.evaluate_expression(&member.expression, None)?;
-                        let expr = self.new_expr(expr);
+                ExpressionKind::Struct(s) => expr::Expression::Struct(
+                    s.name.clone(),
+                    s.members
+                        .iter()
+                        .map(|member| {
+                            let expr = self.evaluate_expression(&member.expression, None)?;
+                            let expr = self.new_expr(expr);
 
-                        Ok((member.name, expr))
-                    })
-                    .collect::<Result<_, _>>()?,
-            ),
-            ExpressionKind::FieldAccess(lhs, ident) => {
-                let s = self.evaluate_expression(lhs, None)?;
+                            Ok((member.name, expr))
+                        })
+                        .collect::<Result<_, _>>()?,
+                ),
+                ExpressionKind::FieldAccess(lhs, ident) => {
+                    let s = self.evaluate_expression(lhs, None)?;
 
-                match s {
-                    expr::Expression::Struct(_, members) => self.values[members.get(ident).unwrap().0].clone(),
-                    _ => unreachable!(),
+                    match s {
+                        expr::Expression::Struct(_, members) => self.values[members.get(ident).unwrap().0].clone(),
+                        _ => unreachable!(),
+                    }
                 }
-            }
-            ExpressionKind::Assignment(lhs, rhs) => {
-                let rhs = self.evaluate_expression(rhs, None)?;
-                *self.get_place(lhs)? = rhs;
+                ExpressionKind::Assignment(lhs, rhs) => {
+                    let rhs = self.evaluate_expression(rhs, None)?;
+                    *self.get_place(lhs)? = rhs;
 
-                expr::Expression::Unit
-            }
-            ExpressionKind::Unit => expr::Expression::Unit,
-        })
+                    expr::Expression::Unit
+                }
+                ExpressionKind::Unit => expr::Expression::Unit,
+            })
+        })();
+
+        self.do_typechecking = true;
+        self.expr_eval_count -= 1;
+
+        res
     }
 
     pub fn evaluate_fn_call(

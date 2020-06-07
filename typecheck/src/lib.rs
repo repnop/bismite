@@ -92,7 +92,7 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::UnknownBinOp { lhs, op, rhs } => {
                 write!(f, "No implmentation for `{}` {} `{}`", lhs.name(self.engine), op, rhs.name(self.engine))
             }
-            TypeError::UnknownIdentifier(ident) => write!(f, "TypeError::UnknownIdentifier({})", ident),
+            TypeError::UnknownIdentifier(ident) => write!(f, "Unknown identifier `{}`", ident),
             TypeError::NotValidRhs => write!(f, "Not a valid right hand side expression"),
             TypeError::NotCallable(info) => write!(f, "Type `{}` is not a function", info.name(self.engine)),
             TypeError::TooManyArgs => write!(f, "Too many arguments <todo: fn stuff>"),
@@ -330,24 +330,28 @@ impl TypeEngine {
     }
 
     pub fn typecheck_function(&mut self, ctx: &Context<'_>, path: &Path, function: &Function) -> Result<TypeId> {
-        let mut new_ctx = ctx.new_child();
+        let mut ctx = Context { aliases: ctx.aliases.clone(), bindings: HashMap::new(), parent: None };
+
         let mut parameters = Vec::new();
 
         for fp in &function.parameters {
-            let parameter_id = self.from_hir_type(ctx, &fp.ty)?;
-            new_ctx.bindings.insert(fp.name, parameter_id);
+            let parameter_id = self.from_hir_type(&ctx, &fp.ty)?;
+            ctx.bindings.insert(fp.name, parameter_id);
             parameters.push((fp.name, parameter_id));
         }
 
-        let return_type = self.from_hir_type(&new_ctx, &function.return_type)?;
-        self.typecheck_block(&new_ctx, &function.body, return_type)?;
+        let return_type = self.from_hir_type(&ctx, &function.return_type)?;
+
+        let fn_id = self.types.len();
+        self.name_map.insert(path.with_ident(function.name), fn_id);
+        ctx.aliases.insert(Path::from_identifier(function.name), path.with_ident(function.name));
 
         let type_info = TypeInfo::Function { parameters, return_type };
-
-        self.name_map.insert(path.with_ident(function.name), self.types.len());
         self.types.push(type_info);
 
-        Ok(self.types.len() - 1)
+        self.typecheck_block(&ctx, &function.body, return_type)?;
+
+        Ok(fn_id)
     }
 
     pub fn typecheck_block(&mut self, ctx: &Context<'_>, block: &Block, expected: TypeId) -> Result<TypeId> {
