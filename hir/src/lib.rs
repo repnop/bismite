@@ -266,6 +266,7 @@ pub enum ExpressionKind {
     Block(Box<Block>),
     Boolean(bool),
     FieldAccess(Box<Expression>, Identifier),
+    FnCall(Box<Expression>, Vec<Expression>),
     Integer(i128),
     Path(Path),
     Struct(StructExpr),
@@ -292,6 +293,10 @@ impl ExpressionKind {
             ast::ExpressionKind::Path(path) => ExpressionKind::Path(Path::convert(path)),
             ast::ExpressionKind::Struct(s) => ExpressionKind::Struct(StructExpr::convert(s)),
             ast::ExpressionKind::Unit => ExpressionKind::Unit,
+            ast::ExpressionKind::FnCall(lhs, args) => ExpressionKind::FnCall(
+                Box::new(Expression::convert(&lhs)),
+                args.iter().map(Expression::convert).collect(),
+            ),
             e => todo!("convert {:?}", e),
         }
     }

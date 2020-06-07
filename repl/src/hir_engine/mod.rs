@@ -36,6 +36,7 @@ pub struct HirEngine {
     symbol_table: SymbolTable,
     current_path: Path,
     aliases: HashMap<Path, HashMap<Path, Path>>,
+    functions: HashMap<Path, (hir::Function, TypeId)>,
     values: Vec<expr::Expression>,
 }
 
@@ -92,7 +93,16 @@ impl HirEngine {
 
                 Ok(())
             }
-            _ => todo!("item eval"),
+            ItemKind::Function(f) => {
+                let ctx = self.mk_context();
+                let id = self
+                    .type_engine
+                    .typecheck_function(&ctx, &self.current_path, f)
+                    .map_err(|e| self.mk_type_error(e))?;
+                self.functions.insert(self.current_path.with_ident(f.name), (f.clone(), id));
+
+                Ok(())
+            }
         }
     }
 
@@ -141,14 +151,21 @@ impl HirEngine {
                     _ => todo!("actual eval stuff"),
                 }
             }
+            ExpressionKind::FnCall(lhs, args) => self.evaluate_fn_call(lhs, args, Some(expected_type))?,
             ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
             ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
             ExpressionKind::Path(path) => match path.is_identifier() {
                 Some(ident) => match self.symbol_table.resolve_binding(ident) {
                     Some(local) => self.values[local.value.0].clone(),
-                    None => return Err(HirEngineError::UnknownIdentifier(ident)),
+                    None => match self.functions.get(path) {
+                        Some(_) => expr::Expression::Function(path.clone()),
+                        None => return Err(HirEngineError::UnknownIdentifier(ident)),
+                    },
                 },
-                _ => todo!("path"),
+                _ => match self.functions.get(path) {
+                    Some(_) => expr::Expression::Function(path.clone()),
+                    _ => todo!("path stuff"),
+                },
             },
             ExpressionKind::Struct(s) => expr::Expression::Struct(
                 s.name.clone(),
@@ -178,6 +195,40 @@ impl HirEngine {
             }
             ExpressionKind::Unit => expr::Expression::Unit,
         })
+    }
+
+    pub fn evaluate_fn_call(
+        &mut self,
+        callable: &Expression,
+        args: &[Expression],
+        expected_type: Option<TypeId>,
+    ) -> Result<expr::Expression, HirEngineError> {
+        match self.evaluate_expression(callable, None)? {
+            expr::Expression::Function(path) => {
+                let old_symtab = self.symbol_table.clone();
+                self.symbol_table = SymbolTable::new();
+                let (f, fn_id) = self.functions.get(&path).unwrap().clone();
+                let parameters = match self.type_engine.typeinfo(fn_id) {
+                    TypeInfo::Function { parameters, .. } => parameters.clone(),
+                    _ => unreachable!(),
+                };
+                let iter = parameters.iter().zip(args.iter());
+
+                for (param, arg) in iter {
+                    let expr = self.evaluate_expression(arg, Some(param.1))?;
+                    let expr = self.new_expr(expr);
+
+                    self.symbol_table.new_binding(symbol_table::Local::new(param.0, expr, param.1, false));
+                }
+
+                let res = self.evaluate_block(&f.body, expected_type);
+
+                self.symbol_table = old_symtab;
+
+                res
+            }
+            _ => unreachable!(),
+        }
     }
 
     pub fn evaluate_block(

@@ -58,7 +58,10 @@ impl<'a> Context<'a> {
 pub enum TypeError {
     MismatchedTypes { wanted: TypeInfo, have: TypeInfo },
     NoField(TypeInfo, Identifier),
+    NotCallable(TypeInfo),
+    NotEnoughArgs,
     NotValidRhs,
+    TooManyArgs,
     UnknownBinOp { lhs: TypeInfo, op: BinOp, rhs: TypeInfo },
     UnknownIdentifier(Identifier),
     UnknownType(Path),
@@ -86,8 +89,11 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::UnknownBinOp { lhs, op, rhs } => {
                 write!(f, "No implmentation for {} {} {}", lhs.name(self.engine), op, rhs.name(self.engine))
             }
-            TypeError::UnknownIdentifier(ident) => write!(f, "UnknownIdentifier({})", ident),
+            TypeError::UnknownIdentifier(ident) => write!(f, "TypeError::UnknownIdentifier({})", ident),
             TypeError::NotValidRhs => write!(f, "Not a valid right hand side expression"),
+            TypeError::NotCallable(info) => write!(f, "Type `{}` is not a function", info.name(self.engine)),
+            TypeError::TooManyArgs => write!(f, "Too many arguments <todo: fn stuff>"),
+            TypeError::NotEnoughArgs => write!(f, "Too few arguments <todo: fn stuff>"),
         }
     }
 }
@@ -161,6 +167,28 @@ impl TypeEngine {
             ExpressionKind::Integer(_) => self.unify(ctx, expected, self.integer()),
             ExpressionKind::Boolean(_) => self.unify(ctx, expected, self.bool()),
             ExpressionKind::Block(block) => self.typecheck_block(ctx, block, expected),
+            ExpressionKind::Unit => self.unify(ctx, expected, self.unit()),
+            ExpressionKind::FnCall(lhs, args) => {
+                let infer = self.fresh_infer();
+                let fn_id = self.typecheck_expression(ctx, lhs, infer)?;
+
+                match self.typeinfo(fn_id).clone() {
+                    TypeInfo::Function { parameters, return_type } => {
+                        match parameters.len().cmp(&args.len()) {
+                            std::cmp::Ordering::Less => return Err(TypeError::TooManyArgs),
+                            std::cmp::Ordering::Greater => return Err(TypeError::NotEnoughArgs),
+                            _ => {}
+                        }
+
+                        for ((_, id), arg) in parameters.iter().zip(args.iter()) {
+                            self.typecheck_expression(ctx, arg, *id)?;
+                        }
+
+                        Ok(return_type)
+                    }
+                    _ => Err(TypeError::NotCallable(self.typeinfo(fn_id).clone())),
+                }
+            }
             ExpressionKind::Struct(struct_expr) => {
                 let have = self.gen_struct_typeinfo(ctx, struct_expr)?;
                 let want = match self.resolve_two_way(ctx, &struct_expr.name) {
@@ -171,11 +199,16 @@ impl TypeEngine {
                 self.unify(ctx, want, have)?;
                 self.unify(ctx, want, expected)
             }
-            ExpressionKind::Unit => self.unify(ctx, expected, self.unit()),
             ExpressionKind::Path(path) => match path.is_identifier() {
                 Some(ident) => match ctx.resolve_binding(ident) {
                     Some(id) => Ok(id),
-                    None => Err(TypeError::UnknownIdentifier(ident)),
+                    None => match self.typeid_from_path(ctx, path) {
+                        Some(id) => match self.typeinfo(id) {
+                            TypeInfo::Function { .. } => Ok(id),
+                            info => Err(TypeError::NotCallable(info.clone())),
+                        },
+                        None => Err(TypeError::UnknownIdentifier(ident)),
+                    },
                 },
                 None => todo!("non ident path check"),
             },
@@ -317,7 +350,7 @@ impl TypeEngine {
         Ok(())
     }
 
-    pub fn typecheck_function(&mut self, ctx: &Context<'_>, function: &Function) -> Result<TypeId> {
+    pub fn typecheck_function(&mut self, ctx: &Context<'_>, path: &Path, function: &Function) -> Result<TypeId> {
         let mut new_ctx = ctx.new_child();
         let mut parameters = Vec::new();
 
@@ -327,11 +360,12 @@ impl TypeEngine {
             parameters.push((fp.name, parameter_id));
         }
 
-        let return_type = self.from_hir_type(ctx, &function.return_type)?;
-        self.typecheck_block(ctx, &function.body, return_type)?;
+        let return_type = self.from_hir_type(&new_ctx, &function.return_type)?;
+        self.typecheck_block(&new_ctx, &function.body, return_type)?;
 
         let type_info = TypeInfo::Function { parameters, return_type };
 
+        self.name_map.insert(path.with_ident(function.name), self.types.len());
         self.types.push(type_info);
 
         Ok(self.types.len() - 1)

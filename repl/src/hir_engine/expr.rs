@@ -9,6 +9,7 @@ pub enum Expression {
     Integer(i128),
     Bool(bool),
     Struct(Path, HashMap<Identifier, ExpressionId>),
+    Function(Path),
     Unit,
 }
 
@@ -58,6 +59,7 @@ impl std::fmt::Debug for ExpressionDebug<'_> {
                 write!(f, "{:<width$}}}", "", width = self.indent_level * 4)
             }
             Expression::Unit => write!(f, "Unit"),
+            Expression::Function(path) => write!(f, "{}", path),
         }
     }
 }

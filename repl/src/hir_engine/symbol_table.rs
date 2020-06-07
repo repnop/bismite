@@ -9,6 +9,10 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn with_parent(parent: &SymbolTable) -> SymbolTable {
         Self { parent: Some(Box::new(parent.clone())), symbols: HashMap::new() }
     }
