@@ -82,12 +82,15 @@ impl Debug for TypeErrorDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.error {
             TypeError::NoField(info, field) => write!(f, "No field `{}` on type {}", field, info.name(self.engine)),
-            TypeError::UnknownType(id) => write!(f, "Unknown type: {}", id.to_string()),
-            TypeError::MismatchedTypes { wanted, have } => {
-                write!(f, "Type mismatch: expected {}, but found {}", wanted.name(self.engine), have.name(self.engine))
-            }
+            TypeError::UnknownType(id) => write!(f, "Unknown type: `{}`", id.to_string()),
+            TypeError::MismatchedTypes { wanted, have } => write!(
+                f,
+                "Type mismatch: expected `{}`, but found `{}`",
+                wanted.name(self.engine),
+                have.name(self.engine)
+            ),
             TypeError::UnknownBinOp { lhs, op, rhs } => {
-                write!(f, "No implmentation for {} {} {}", lhs.name(self.engine), op, rhs.name(self.engine))
+                write!(f, "No implmentation for `{}` {} `{}`", lhs.name(self.engine), op, rhs.name(self.engine))
             }
             TypeError::UnknownIdentifier(ident) => write!(f, "TypeError::UnknownIdentifier({})", ident),
             TypeError::NotValidRhs => write!(f, "Not a valid right hand side expression"),
@@ -262,90 +265,26 @@ impl TypeEngine {
                 Ok(self.unit())
             }
             ExpressionKind::BinaryOperation(original_lhs, op, original_rhs) => {
-                match (&original_lhs.kind, op, &original_rhs.kind) {
-                    (ExpressionKind::Integer(_), op, ExpressionKind::Integer(_)) if op.is_arith_op() => {
-                        Ok(self.integer())
+                let op = *op;
+
+                let infer = self.fresh_infer();
+                let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
+
+                let infer = self.fresh_infer();
+                let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
+
+                match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
+                    (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => {
+                        Ok(self.unify(ctx, expected, self.integer())?)
                     }
-                    (ExpressionKind::Boolean(_), op, ExpressionKind::Boolean(_)) if op.is_logic_op() => Ok(self.bool()),
-                    (ExpressionKind::Path(path), &op, _) => match path.is_identifier() {
-                        Some(ident) => match ctx.resolve_binding(ident) {
-                            Some(id) => {
-                                let infer = self.fresh_infer();
-                                let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
-                                let lhs = self.typeinfo(id);
-
-                                match (lhs, self.typeinfo(rhs_id)) {
-                                    (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
-                                    (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
-                                    (lhs, rhs) => {
-                                        Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() })
-                                    }
-                                }
-                            }
-                            None => Err(TypeError::UnknownIdentifier(ident)),
-                        },
-                        None => todo!("other path checking"),
-                    },
-                    (ExpressionKind::BinaryOperation(_, _, _), &op, _) => {
-                        let infer = self.fresh_infer();
-                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
-
-                        let infer = self.fresh_infer();
-                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
-
-                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
-                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
-                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
-                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
-                        }
+                    (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => {
+                        Ok(self.unify(ctx, expected, self.bool())?)
                     }
-                    (_, &op, ExpressionKind::BinaryOperation(_, _, _)) => {
-                        let infer = self.fresh_infer();
-                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
-
-                        let infer = self.fresh_infer();
-                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
-
-                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
-                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
-                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
-                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
-                        }
-                    }
-                    (ExpressionKind::Block(_), &op, _) => {
-                        let infer = self.fresh_infer();
-                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
-
-                        let infer = self.fresh_infer();
-                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
-
-                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
-                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
-                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
-                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
-                        }
-                    }
-                    (_, &op, ExpressionKind::Block(_)) => {
-                        let infer = self.fresh_infer();
-                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
-
-                        let infer = self.fresh_infer();
-                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
-
-                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
-                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
-                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
-                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
-                        }
-                    }
-                    (_, &op, _) => {
-                        let infer = self.fresh_infer();
-                        let lhs = self.typecheck_expression(ctx, original_lhs, infer)?;
-
-                        let infer = self.fresh_infer();
-                        let rhs = self.typecheck_expression(ctx, original_rhs, infer)?;
-                        Err(TypeError::UnknownBinOp { lhs: self.types[lhs].clone(), op, rhs: self.types[rhs].clone() })
-                    }
+                    (_, _) => Err(TypeError::UnknownBinOp {
+                        lhs: self.types[lhs_id].clone(),
+                        op,
+                        rhs: self.types[rhs_id].clone(),
+                    }),
                 }
             }
         }
@@ -522,7 +461,8 @@ impl TypeInfo {
             TypeInfo::Unit => String::from("Unit"),
             TypeInfo::Struct { full_path, .. } => full_path.to_string(),
             TypeInfo::Ref(r) => engine.typeinfo(*r).name(engine),
-            _ => unreachable!(),
+            TypeInfo::Function { .. } => format!("{:?}", self.debug(engine)),
+            info => unreachable!("{:?}", info),
         }
     }
 }
