@@ -197,7 +197,10 @@ impl<'a> Parser<'a> {
                 TokenKind::Fn | TokenKind::Struct => items.push(self.item()?),
                 _ => match self.statement_or_expression()? {
                     Either::Left(stmt) => statements.push(stmt),
-                    Either::Right(expr) if return_expr.is_none() => return_expr = Some(expr),
+                    Either::Right(expr) if return_expr.is_none() => {
+                        return_expr = Some(expr);
+                        break;
+                    }
                     _ => break,
                 },
             }

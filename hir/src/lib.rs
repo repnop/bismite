@@ -338,6 +338,7 @@ impl StructExprMember {
 
 #[derive(Clone, Debug)]
 pub struct Block {
+    pub items: Vec<Item>,
     pub statements: Vec<Statement>,
     pub return_expr: Expression,
 }
@@ -345,6 +346,7 @@ pub struct Block {
 impl Block {
     pub fn convert(block: &ast::Block) -> Self {
         Self {
+            items: block.items.iter().map(Item::convert).collect(),
             statements: block.statements.iter().map(Statement::convert).collect(),
             return_expr: block.return_expr.as_ref().map(Expression::convert).unwrap_or_else(|| Expression {
                 kind: ExpressionKind::Unit,
