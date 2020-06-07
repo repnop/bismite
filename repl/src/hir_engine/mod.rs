@@ -205,8 +205,6 @@ impl HirEngine {
     ) -> Result<expr::Expression, HirEngineError> {
         match self.evaluate_expression(callable, None)? {
             expr::Expression::Function(path) => {
-                let old_symtab = self.symbol_table.clone();
-                self.symbol_table = SymbolTable::new();
                 let (f, fn_id) = self.functions.get(&path).unwrap().clone();
                 let parameters = match self.type_engine.typeinfo(fn_id) {
                     TypeInfo::Function { parameters, .. } => parameters.clone(),
@@ -214,12 +212,17 @@ impl HirEngine {
                 };
                 let iter = parameters.iter().zip(args.iter());
 
+                let mut new_symbols = SymbolTable::new();
+
                 for (param, arg) in iter {
                     let expr = self.evaluate_expression(arg, Some(param.1))?;
                     let expr = self.new_expr(expr);
 
-                    self.symbol_table.new_binding(symbol_table::Local::new(param.0, expr, param.1, false));
+                    new_symbols.new_binding(symbol_table::Local::new(param.0, expr, param.1, false));
                 }
+
+                let old_symtab = self.symbol_table.clone();
+                self.symbol_table = new_symbols;
 
                 let res = self.evaluate_block(&f.body, expected_type);
 
