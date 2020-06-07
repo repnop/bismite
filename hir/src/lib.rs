@@ -263,6 +263,7 @@ impl Expression {
 pub enum ExpressionKind {
     Assignment(Box<Expression>, Box<Expression>),
     BinaryOperation(Box<Expression>, BinOp, Box<Expression>),
+    Block(Box<Block>),
     Boolean(bool),
     FieldAccess(Box<Expression>, Identifier),
     Integer(i128),
@@ -282,6 +283,7 @@ impl ExpressionKind {
                 *op,
                 Box::new(Expression::convert(&e2)),
             ),
+            ast::ExpressionKind::Block(b) => ExpressionKind::Block(Box::new(Block::convert(&b))),
             ast::ExpressionKind::Boolean(b) => ExpressionKind::Boolean(*b),
             ast::ExpressionKind::FieldAccess(e, ident) => {
                 ExpressionKind::FieldAccess(Box::new(Expression::convert(e)), Identifier::convert(ident))
@@ -332,7 +334,19 @@ impl StructExprMember {
 #[derive(Clone, Debug)]
 pub struct Block {
     pub statements: Vec<Statement>,
-    pub return_expr: Option<Expression>,
+    pub return_expr: Expression,
+}
+
+impl Block {
+    pub fn convert(block: &ast::Block) -> Self {
+        Self {
+            statements: block.statements.iter().map(Statement::convert).collect(),
+            return_expr: block.return_expr.as_ref().map(Expression::convert).unwrap_or_else(|| Expression {
+                kind: ExpressionKind::Unit,
+                span: block.statements.last().map(|s| s.span).unwrap_or(block.span),
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -344,8 +358,17 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn convert(_: &ast::Function) -> Self {
-        todo!("function conversion")
+    pub fn convert(f: &ast::Function) -> Self {
+        Self {
+            name: Identifier::convert(&f.name),
+            parameters: f.parameters.iter().map(FunctionParameter::convert).collect(),
+            return_type: f.return_ty.as_ref().map(Type::convert).unwrap_or_else(|| Type {
+                kind: TypeKind::Unit,
+                // FIXME
+                span: Span::new(0, 0),
+            }),
+            body: Block::convert(&f.body),
+        }
     }
 }
 
@@ -354,6 +377,12 @@ pub struct FunctionParameter {
     pub name: Identifier,
     pub ty: Type,
     pub span: Span,
+}
+
+impl FunctionParameter {
+    pub fn convert(fp: &ast::FunctionParameter) -> Self {
+        Self { name: Identifier::convert(&fp.name), ty: Type::convert(&fp.ty), span: fp.span }
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -1,13 +1,11 @@
 mod expr;
 mod symbol_table;
 
-use codespan::Span;
 use hir::{
-    visit::Visitor, BinOp, Expression, ExpressionKind, Identifier, Item, ItemKind, Local, Module, Path, Statement,
-    StatementKind, Struct,
+    visit::Visitor, BinOp, Block, Expression, ExpressionKind, Identifier, Item, ItemKind, Local, Path, Statement,
+    StatementKind,
 };
 use std::{
-    borrow::Cow,
     collections::HashMap,
     fmt::{self, Debug, Formatter},
 };
@@ -16,7 +14,7 @@ use typecheck::{Context, TypeEngine, TypeError, TypeId, TypeInfo};
 
 pub enum HirEngineError {
     NotMutable(Identifier),
-    TypeError(TypeError, TypeEngine),
+    TypeError(Box<TypeError>, Box<TypeEngine>),
     UnknownImport(Path),
     UnknownIdentifier(Identifier),
 }
@@ -38,6 +36,7 @@ pub struct HirEngine {
     symbol_table: SymbolTable,
     current_path: Path,
     aliases: HashMap<Path, HashMap<Path, Path>>,
+    values: Vec<expr::Expression>,
 }
 
 impl HirEngine {
@@ -47,6 +46,16 @@ impl HirEngine {
 
     pub fn type_engine(&self) -> &TypeEngine {
         &self.type_engine
+    }
+
+    pub fn expr_arena(&self) -> &[expr::Expression] {
+        &self.values
+    }
+
+    pub fn new_expr(&mut self, expr: expr::Expression) -> expr::ExpressionId {
+        let id = expr::ExpressionId(self.values.len());
+        self.values.push(expr);
+        id
     }
 
     pub fn evaluate_item(&mut self, item: &Item) -> Result<(), HirEngineError> {
@@ -98,11 +107,9 @@ impl HirEngine {
         let ctx = self.mk_context();
         let type_id = self.type_engine.from_hir_type(&ctx, &local.ty).map_err(|e| self.mk_type_error(e))?;
         let expr = self.evaluate_expression(&local.value, Some(type_id))?;
+        let expr = self.new_expr(expr);
 
-        self.symbol_table.symbols.insert(
-            local.name,
-            symbol_table::Local { name: local.name, value: expr, ty: type_id, mutable: local.mutable, metadata: () },
-        );
+        self.symbol_table.new_binding(symbol_table::Local::new(local.name, expr, type_id, local.mutable));
 
         Ok(())
     }
@@ -118,6 +125,7 @@ impl HirEngine {
         self.type_engine.typecheck_expression(&ctx, expr, expected_type).map_err(|e| self.mk_type_error(e))?;
 
         Ok(match &expr.kind {
+            ExpressionKind::Block(block) => self.evaluate_block(block, Some(expected_type))?,
             ExpressionKind::BinaryOperation(lhs, op, rhs) => {
                 let lhs = self.evaluate_expression(lhs, None)?;
                 let rhs = self.evaluate_expression(rhs, None)?;
@@ -128,6 +136,7 @@ impl HirEngine {
                         BinOp::Subtract => expr::Expression::Integer(lhs - rhs),
                         BinOp::Multiply => expr::Expression::Integer(lhs * rhs),
                         BinOp::Divide => expr::Expression::Integer(lhs / rhs),
+                        BinOp::LogicalAnd => todo!(),
                     },
                     _ => todo!("actual eval stuff"),
                 }
@@ -135,8 +144,8 @@ impl HirEngine {
             ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
             ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
             ExpressionKind::Path(path) => match path.is_identifier() {
-                Some(ident) => match self.symbol_table.symbols.get(&ident) {
-                    Some(local) => local.value.clone(),
+                Some(ident) => match self.symbol_table.resolve_binding(ident) {
+                    Some(local) => self.values[local.value.0].clone(),
                     None => return Err(HirEngineError::UnknownIdentifier(ident)),
                 },
                 _ => todo!("path"),
@@ -145,14 +154,19 @@ impl HirEngine {
                 s.name.clone(),
                 s.members
                     .iter()
-                    .map(|member| Ok((member.name, self.evaluate_expression(&member.expression, None)?)))
+                    .map(|member| {
+                        let expr = self.evaluate_expression(&member.expression, None)?;
+                        let expr = self.new_expr(expr);
+
+                        Ok((member.name, expr))
+                    })
                     .collect::<Result<_, _>>()?,
             ),
             ExpressionKind::FieldAccess(lhs, ident) => {
                 let s = self.evaluate_expression(lhs, None)?;
 
                 match s {
-                    expr::Expression::Struct(_, members) => members.get(ident).cloned().unwrap(),
+                    expr::Expression::Struct(_, members) => self.values[members.get(ident).unwrap().0].clone(),
                     _ => unreachable!(),
                 }
             }
@@ -162,8 +176,30 @@ impl HirEngine {
 
                 expr::Expression::Unit
             }
-            _ => todo!("expr eval"),
+            ExpressionKind::Unit => expr::Expression::Unit,
         })
+    }
+
+    pub fn evaluate_block(
+        &mut self,
+        block: &Block,
+        expected_type: Option<TypeId>,
+    ) -> Result<expr::Expression, HirEngineError> {
+        let old_symtab = self.symbol_table.clone();
+
+        self.symbol_table = SymbolTable::with_parent(&old_symtab);
+
+        let res = (|| {
+            for statement in &block.statements {
+                self.evaluate_statement(statement)?;
+            }
+
+            self.evaluate_expression(&block.return_expr, expected_type)
+        })();
+
+        self.symbol_table = old_symtab;
+
+        res
     }
 
     fn get_place(&mut self, expr: &Expression) -> Result<&mut expr::Expression, HirEngineError> {
@@ -172,13 +208,16 @@ impl HirEngine {
                 let lhs = self.get_place(lhs)?;
 
                 match lhs {
-                    expr::Expression::Struct(_, members) => Ok(members.get_mut(field).unwrap()),
+                    expr::Expression::Struct(_, members) => {
+                        let id = members.get_mut(field).unwrap().0;
+                        Ok(&mut self.values[id])
+                    }
                     _ => unreachable!(),
                 }
             }
             ExpressionKind::Path(path) => match path.is_identifier() {
-                Some(ident) => match self.symbol_table.symbols.get_mut(&ident) {
-                    Some(e) if e.mutable => Ok(&mut e.value),
+                Some(ident) => match self.symbol_table.resolve_binding(ident) {
+                    Some(e) if e.mutable => Ok(&mut self.values[e.value.0]),
                     Some(_) => Err(HirEngineError::NotMutable(ident)),
                     None => unreachable!(),
                 },
@@ -194,18 +233,19 @@ impl HirEngine {
         Some(self.type_engine.typeinfo(id).clone())
     }
 
-    pub fn varinfo(&self, ident: Identifier) -> Option<&symbol_table::Local<()>> {
-        self.symbol_table.symbols.get(&ident)
+    pub fn varinfo(&self, ident: Identifier) -> Option<symbol_table::Local> {
+        self.symbol_table.resolve_binding(ident)
     }
 
     fn mk_type_error(&self, error: TypeError) -> HirEngineError {
-        HirEngineError::TypeError(error, self.type_engine.clone())
+        HirEngineError::TypeError(Box::new(error), Box::new(self.type_engine.clone()))
     }
 
-    fn mk_context(&self) -> Context {
+    fn mk_context(&self) -> Context<'static> {
         Context {
             aliases: self.aliases.get(&self.current_path).cloned().unwrap_or_default(),
-            bindings: self.symbol_table.symbols.iter().map(|(k, v)| (*k, v.ty)).collect(),
+            bindings: self.symbol_table.bindings().map(|local| (local.name, local.ty)).collect(),
+            parent: None,
         }
     }
 }

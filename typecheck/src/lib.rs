@@ -1,5 +1,6 @@
 use hir::{
-    BinOp, Expression, ExpressionKind, Identifier, Item, ItemKind, Path, Struct, StructExpr, Sym, Type, TypeKind,
+    BinOp, Block, Expression, ExpressionKind, Function, Identifier, Path, Statement, StatementKind, Struct, StructExpr,
+    Type, TypeKind,
 };
 use std::{
     collections::HashMap,
@@ -9,11 +10,49 @@ use std::{
 pub type Result<T> = std::result::Result<T, TypeError>;
 pub type TypeId = usize;
 
-type Aliases = HashMap<Path, Path>;
-
-pub struct Context {
-    pub aliases: Aliases,
+#[derive(Default)]
+pub struct Context<'a> {
+    pub aliases: HashMap<Path, Path>,
     pub bindings: HashMap<Identifier, TypeId>,
+    pub parent: Option<&'a Context<'a>>,
+}
+
+impl<'a> Context<'a> {
+    pub fn new() -> Context<'static> {
+        Context { aliases: HashMap::new(), bindings: HashMap::new(), parent: None }
+    }
+
+    pub fn new_child<'b: 'a>(&'b self) -> Context<'a> {
+        Self { aliases: HashMap::new(), bindings: HashMap::new(), parent: Some(self) }
+    }
+
+    pub fn new_path_alias(&mut self, original: Path, alias: Path) {
+        self.aliases.insert(original, alias);
+    }
+
+    pub fn new_binding(&mut self, ident: Identifier, type_id: TypeId) {
+        self.bindings.insert(ident, type_id);
+    }
+
+    pub fn resolve_path_alias(&self, path: &Path) -> Option<&Path> {
+        match self.aliases.get(path) {
+            Some(path) => Some(path),
+            None => match &self.parent {
+                Some(parent) => parent.resolve_path_alias(path),
+                None => None,
+            },
+        }
+    }
+
+    pub fn resolve_binding(&self, ident: Identifier) -> Option<TypeId> {
+        match self.bindings.get(&ident) {
+            Some(id) => Some(*id),
+            None => match &self.parent {
+                Some(parent) => parent.resolve_binding(ident),
+                None => None,
+            },
+        }
+    }
 }
 
 pub enum TypeError {
@@ -71,21 +110,22 @@ impl TypeEngine {
         }
     }
 
-    pub fn unify(&mut self, ctx: &Context, a: TypeId, b: TypeId) -> Result<TypeId> {
-        match (self.types[a].clone(), self.types[b].clone()) {
+    pub fn unify(&mut self, ctx: &Context<'_>, want: TypeId, have: TypeId) -> Result<TypeId> {
+        match (self.types[want].clone(), self.types[have].clone()) {
             (TypeInfo::Bool, TypeInfo::Bool) => Ok(self.bool()),
             (TypeInfo::Integer, TypeInfo::Integer) => Ok(self.integer()),
+            (TypeInfo::Unit, TypeInfo::Unit) => Ok(self.unit()),
             (
                 TypeInfo::Struct { full_path: full_path1, members: members1, .. },
                 TypeInfo::Struct { full_path: full_path2, members: members2, .. },
             ) => {
-                let full_path1 = ctx.aliases.get(&full_path1).unwrap_or(&full_path1);
-                let full_path2 = ctx.aliases.get(&full_path2).unwrap_or(&full_path2);
+                let full_path1 = ctx.resolve_path_alias(&full_path1).unwrap_or(&full_path1);
+                let full_path2 = ctx.resolve_path_alias(&full_path2).unwrap_or(&full_path2);
 
                 if full_path1 != full_path2 {
                     return Err(TypeError::MismatchedTypes {
-                        wanted: self.types[a].clone(),
-                        have: self.types[b].clone(),
+                        wanted: self.types[want].clone(),
+                        have: self.types[have].clone(),
                     });
                 }
 
@@ -95,18 +135,18 @@ impl TypeEngine {
                     self.unify(ctx, a, b)?;
                 }
 
-                Ok(a)
+                Ok(want)
             }
             (TypeInfo::Infer, _) => {
-                self.types[a] = TypeInfo::Ref(b);
-                Ok(b)
+                self.types[want] = TypeInfo::Ref(have);
+                Ok(have)
             }
             (_, TypeInfo::Infer) => {
-                self.types[b] = TypeInfo::Ref(a);
-                Ok(a)
+                self.types[have] = TypeInfo::Ref(want);
+                Ok(want)
             }
-            (TypeInfo::Ref(a), _) => self.unify(ctx, a, b),
-            (_, TypeInfo::Ref(b)) => self.unify(ctx, a, b),
+            (TypeInfo::Ref(a), _) => self.unify(ctx, a, have),
+            (_, TypeInfo::Ref(b)) => self.unify(ctx, want, b),
             (a, b) => Err(TypeError::MismatchedTypes { wanted: a, have: b }),
         }
     }
@@ -116,10 +156,11 @@ impl TypeEngine {
         self.types.len() - 1
     }
 
-    pub fn typecheck_expression(&mut self, ctx: &Context, expr: &Expression, expected: TypeId) -> Result<TypeId> {
+    pub fn typecheck_expression(&mut self, ctx: &Context<'_>, expr: &Expression, expected: TypeId) -> Result<TypeId> {
         match &expr.kind {
-            ExpressionKind::Integer(_) => self.unify(ctx, self.integer(), expected),
-            ExpressionKind::Boolean(_) => self.unify(ctx, self.bool(), expected),
+            ExpressionKind::Integer(_) => self.unify(ctx, expected, self.integer()),
+            ExpressionKind::Boolean(_) => self.unify(ctx, expected, self.bool()),
+            ExpressionKind::Block(block) => self.typecheck_block(ctx, block, expected),
             ExpressionKind::Struct(struct_expr) => {
                 let have = self.gen_struct_typeinfo(ctx, struct_expr)?;
                 let want = match self.resolve_two_way(ctx, &struct_expr.name) {
@@ -130,10 +171,10 @@ impl TypeEngine {
                 self.unify(ctx, want, have)?;
                 self.unify(ctx, want, expected)
             }
-            ExpressionKind::Unit => self.unify(ctx, self.unit(), expected),
+            ExpressionKind::Unit => self.unify(ctx, expected, self.unit()),
             ExpressionKind::Path(path) => match path.is_identifier() {
-                Some(ident) => match ctx.bindings.get(&ident) {
-                    Some(id) => Ok(*id),
+                Some(ident) => match ctx.resolve_binding(ident) {
+                    Some(id) => Ok(id),
                     None => Err(TypeError::UnknownIdentifier(ident)),
                 },
                 None => todo!("non ident path check"),
@@ -157,8 +198,8 @@ impl TypeEngine {
                         self.typecheck_expression(ctx, lhs, infer)?
                     }
                     ExpressionKind::Path(path) => match path.is_identifier() {
-                        Some(ident) => match ctx.bindings.get(&ident) {
-                            Some(&id) => id,
+                        Some(ident) => match ctx.resolve_binding(ident) {
+                            Some(id) => id,
                             None => return Err(TypeError::UnknownIdentifier(ident)),
                         },
                         None => return Err(TypeError::NotValidRhs),
@@ -180,8 +221,8 @@ impl TypeEngine {
                     }
                     (ExpressionKind::Boolean(_), op, ExpressionKind::Boolean(_)) if op.is_logic_op() => Ok(self.bool()),
                     (ExpressionKind::Path(path), &op, _) => match path.is_identifier() {
-                        Some(ident) => match ctx.bindings.get(&ident) {
-                            Some(&id) => {
+                        Some(ident) => match ctx.resolve_binding(ident) {
+                            Some(id) => {
                                 let infer = self.fresh_infer();
                                 let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
                                 let lhs = self.typeinfo(id);
@@ -244,7 +285,7 @@ impl TypeEngine {
         Ok(())
     }
 
-    pub fn register_struct(&mut self, ctx: &Context, path: &Path, strukt: &Struct) -> Result<()> {
+    pub fn register_struct(&mut self, ctx: &Context<'_>, path: &Path, strukt: &Struct) -> Result<()> {
         let struct_path = path.with_ident(strukt.name);
 
         let type_info = TypeInfo::Struct {
@@ -276,11 +317,63 @@ impl TypeEngine {
         Ok(())
     }
 
-    pub fn typeid_from_path(&self, ctx: &Context, path: &Path) -> Option<TypeId> {
-        self.name_map.get(ctx.aliases.get(path).unwrap_or(path)).copied()
+    pub fn typecheck_function(&mut self, ctx: &Context<'_>, function: &Function) -> Result<TypeId> {
+        let mut new_ctx = ctx.new_child();
+        let mut parameters = Vec::new();
+
+        for fp in &function.parameters {
+            let parameter_id = self.from_hir_type(ctx, &fp.ty)?;
+            new_ctx.bindings.insert(fp.name, parameter_id);
+            parameters.push((fp.name, parameter_id));
+        }
+
+        let return_type = self.from_hir_type(ctx, &function.return_type)?;
+        self.typecheck_block(ctx, &function.body, return_type)?;
+
+        let type_info = TypeInfo::Function { parameters, return_type };
+
+        self.types.push(type_info);
+
+        Ok(self.types.len() - 1)
     }
 
-    pub fn from_hir_type(&mut self, ctx: &Context, ty: &Type) -> Result<TypeId> {
+    pub fn typecheck_block(&mut self, ctx: &Context<'_>, block: &Block, expected: TypeId) -> Result<TypeId> {
+        let mut child_ctx = ctx.new_child();
+
+        for statement in &block.statements {
+            if let Some((name, id)) = self.typecheck_statement(&child_ctx, statement)? {
+                child_ctx.bindings.insert(name, id);
+            }
+        }
+
+        self.typecheck_expression(&child_ctx, &block.return_expr, expected)
+    }
+
+    pub fn typecheck_statement(
+        &mut self,
+        ctx: &Context<'_>,
+        statement: &Statement,
+    ) -> Result<Option<(Identifier, TypeId)>> {
+        match &statement.kind {
+            StatementKind::Expression(e) => {
+                let infer = self.fresh_infer();
+                self.typecheck_expression(ctx, &e, infer)?;
+                Ok(None)
+            }
+            StatementKind::Local(local) => {
+                let ty_id = self.from_hir_type(ctx, &local.ty)?;
+                self.typecheck_expression(ctx, &local.value, ty_id)?;
+
+                Ok(Some((local.name, ty_id)))
+            }
+        }
+    }
+
+    pub fn typeid_from_path(&self, ctx: &Context<'_>, path: &Path) -> Option<TypeId> {
+        self.name_map.get(ctx.resolve_path_alias(path).unwrap_or(path)).copied()
+    }
+
+    pub fn from_hir_type(&mut self, ctx: &Context<'_>, ty: &Type) -> Result<TypeId> {
         match &ty.kind {
             TypeKind::Integer => Ok(self.integer()),
             TypeKind::Bool => Ok(self.bool()),
@@ -292,7 +385,7 @@ impl TypeEngine {
         }
     }
 
-    fn gen_struct_typeinfo(&mut self, ctx: &Context, se: &StructExpr) -> Result<TypeId> {
+    fn gen_struct_typeinfo(&mut self, ctx: &Context<'_>, se: &StructExpr) -> Result<TypeId> {
         let type_info = TypeInfo::Struct {
             full_path: se.name.clone(),
             members: se
@@ -309,8 +402,8 @@ impl TypeEngine {
         Ok(self.types.len() - 1)
     }
 
-    fn resolve_two_way(&self, ctx: &Context, path: &Path) -> Option<TypeId> {
-        self.name_map.get(ctx.aliases.get(path).unwrap_or(path)).copied()
+    fn resolve_two_way(&self, ctx: &Context<'_>, path: &Path) -> Option<TypeId> {
+        self.name_map.get(ctx.resolve_path_alias(path).unwrap_or(path)).copied()
     }
 
     fn integer(&self) -> TypeId {
@@ -335,10 +428,11 @@ impl Default for TypeEngine {
 #[derive(Debug, Clone)]
 pub enum TypeInfo {
     Bool,
-    Integer,
-    Struct { full_path: Path, members: HashMap<Identifier, TypeId> },
+    Function { parameters: Vec<(Identifier, TypeId)>, return_type: TypeId },
     Infer,
+    Integer,
     Ref(TypeId),
+    Struct { full_path: Path, members: HashMap<Identifier, TypeId> },
     Unit,
 }
 
@@ -376,6 +470,19 @@ impl Debug for TypeInfoDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.info {
             TypeInfo::Bool => write!(f, "Bool"),
+            TypeInfo::Function { parameters, return_type } => {
+                write!(f, "fn(")?;
+
+                if let Some((ident, id)) = parameters.first() {
+                    write!(f, "{}: {:?}", ident, self.engine.typeinfo(*id).name(self.engine))?;
+                }
+
+                for (ident, id) in parameters.iter().skip(1) {
+                    write!(f, ", {}: {:?}", ident, self.engine.typeinfo(*id).name(self.engine))?;
+                }
+
+                write!(f, ") -> {:?}", self.engine.typeinfo(*return_type).name(self.engine))
+            }
             TypeInfo::Integer => write!(f, "Int"),
             TypeInfo::Struct { full_path, members, .. } => {
                 writeln!(f, "{} {{", full_path)?;

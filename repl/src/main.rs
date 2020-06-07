@@ -1,12 +1,11 @@
 #![allow(clippy::match_bool)]
 
-mod eval;
+mod hir_engine;
 mod repl;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-use eval::EvalError;
 use parser::ParseError;
 use repl::{Repl, ReplError, ReplErrorKind};
 
@@ -50,54 +49,6 @@ fn print_err(e: ReplError) {
                 let config = codespan_reporting::term::Config::default();
 
                 codespan_reporting::term::emit(&mut writer.lock(), &config, &file, &diagnostic).unwrap();
-            }
-        },
-        ReplError { source, kind: ReplErrorKind::EvalError(e) } => match e {
-            EvalError::NotImplementedYet(thing) => println!("Error: {} not supported yet", thing),
-            EvalError::NotValidAssignee(span) => {
-                let file = SimpleFile::new("<stdin>", source);
-                let diagnostic = Diagnostic::error()
-                    .with_message("Cannot assign to expression")
-                    .with_labels(vec![Label::primary((), span)]);
-                let writer = StandardStream::stderr(ColorChoice::Always);
-                let config = codespan_reporting::term::Config::default();
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &file, &diagnostic).unwrap();
-            }
-            EvalError::VariableNotAssignable(span) => {
-                let file = SimpleFile::new("<stdin>", source);
-                let diagnostic = Diagnostic::error()
-                    .with_message("Cannot assign to immutable binding")
-                    .with_labels(vec![Label::primary((), span).with_message("was not declared as mutable")]);
-                let writer = StandardStream::stderr(ColorChoice::Always);
-                let config = codespan_reporting::term::Config::default();
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &file, &diagnostic).unwrap();
-            }
-            EvalError::VariableNotFound(span) => {
-                let file = SimpleFile::new("<stdin>", source);
-                let diagnostic =
-                    Diagnostic::error().with_message("Unknown identifier").with_labels(vec![Label::primary((), span)]);
-                let writer = StandardStream::stderr(ColorChoice::Always);
-                let config = codespan_reporting::term::Config::default();
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &file, &diagnostic).unwrap();
-            }
-            EvalError::IncompatibleTypes((type1, span1), (type2, span2)) => {
-                let file = SimpleFile::new("<stdin>", source);
-                let diagnostic = Diagnostic::error().with_message("Incompatible types").with_labels(vec![
-                    Label::primary((), span1).with_message(format!("Has type {}", type1)),
-                    Label::primary((), span2).with_message(format!("Has type {}", type2)),
-                ]);
-                let writer = StandardStream::stderr(ColorChoice::Always);
-                let config = codespan_reporting::term::Config::default();
-
-                codespan_reporting::term::emit(&mut writer.lock(), &config, &file, &diagnostic).unwrap();
-            }
-            EvalError::Multiple(errs) => {
-                for err in errs {
-                    print_err(ReplError::new(source.clone(), ReplErrorKind::EvalError(err)));
-                }
             }
         },
     }

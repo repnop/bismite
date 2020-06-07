@@ -33,11 +33,11 @@ pub trait Visitor: Sized {
         walk::ty(self, ty);
     }
 
-    fn visit_function_parameter(&mut self, function_param: &FunctionParameter) {
+    fn visit_function_parameter(&mut self, _: &FunctionParameter) {
         todo!()
     }
 
-    fn visit_block(&mut self, block: &Block) {
+    fn visit_block(&mut self, _: &Block) {
         todo!()
     }
 
@@ -45,15 +45,15 @@ pub trait Visitor: Sized {
         walk::node(self, node)
     }
 
-    fn visit_statement(&mut self, statement: &Statement) {
+    fn visit_statement(&mut self, _: &Statement) {
         todo!()
     }
 
-    fn visit_expression(&mut self, expression: &Expression) {
+    fn visit_expression(&mut self, _: &Expression) {
         todo!()
     }
 
-    fn visit_use(&mut self, usage: &Use) {
+    fn visit_use(&mut self, _: &Use) {
         todo!()
     }
 }

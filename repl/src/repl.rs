@@ -1,4 +1,4 @@
-use crate::eval::{hir_engine::HirEngine, Environment, EvalError};
+use crate::hir_engine::HirEngine;
 use ast::AstNode;
 use parser::{ParseError, Parser};
 use rustyline::{error::ReadlineError, hint::HistoryHinter, CompletionType, Config, Editor};
@@ -51,7 +51,6 @@ impl ReplError {
 }
 
 pub enum ReplErrorKind {
-    EvalError(EvalError),
     ParseError(ParseError),
     MultiExpression,
     Readline(rustyline::error::ReadlineError),
@@ -59,7 +58,6 @@ pub enum ReplErrorKind {
 
 pub struct Repl {
     code: String,
-    environment: Environment,
     editor: Editor<Helper>,
     prompt_mode: PromptMode,
     hir_engine: HirEngine,
@@ -71,13 +69,7 @@ impl Repl {
         editor.set_helper(Some(Helper::new()));
         let _ = editor.load_history("repl_history.bismite");
 
-        Self {
-            code: String::new(),
-            environment: Environment::new(),
-            editor,
-            prompt_mode: PromptMode::Fresh,
-            hir_engine: HirEngine::new(),
-        }
+        Self { code: String::new(), editor, prompt_mode: PromptMode::Fresh, hir_engine: HirEngine::new() }
     }
     pub fn run(&mut self) -> Result<Option<String>, ReplError> {
         let line = match self.read_line(self.prompt_mode) {
@@ -143,7 +135,10 @@ impl Repl {
                     },
                     AstNode::Expression(e) => {
                         match self.hir_engine.evaluate_expression(&hir::Expression::convert(&e), None) {
-                            Ok(e) => eval_output = Some(format!("{:?}", e.debug())),
+                            Ok(e) if !e.is_unit() => {
+                                eval_output = Some(format!("{:?}", e.debug(self.hir_engine.expr_arena())))
+                            }
+                            Ok(_) => eval_output = None,
                             Err(e) => eval_output = Some(format!("{:?}", e)),
                         }
                     }
@@ -151,7 +146,6 @@ impl Repl {
                         Ok(_) => eval_output = None,
                         Err(e) => eval_output = Some(format!("{:?}", e)),
                     },
-                    _ => todo!("idfrhgb;oksernhbks"),
                 },
                 EvalMode::Ast => eval_output = Some(format!("{:#?}", node)),
                 EvalMode::Hir => {
@@ -198,7 +192,10 @@ impl Repl {
                     Ok(valid_ident) => {
                         let valid_ident = hir::Identifier::convert(&valid_ident);
                         match self.hir_engine.varinfo(valid_ident) {
-                            Some(var_info) => println!("{:?}", var_info.debug(self.hir_engine.type_engine())),
+                            Some(var_info) => println!(
+                                "{:?}",
+                                var_info.debug(self.hir_engine.expr_arena(), self.hir_engine.type_engine())
+                            ),
                             None => {
                                 println!("Variable with identifier `{}` not found in scope", valid_ident);
                                 return true;
