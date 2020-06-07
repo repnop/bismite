@@ -143,6 +143,20 @@ impl TypeEngine {
 
                 Ok(want)
             }
+            (
+                TypeInfo::Function { parameters: parameters1, return_type: return_type1 },
+                TypeInfo::Function { parameters: parameters2, return_type: return_type2 },
+            ) => {
+                match parameters1.len().cmp(&parameters2.len()) {
+                    std::cmp::Ordering::Less => return Err(TypeError::TooManyArgs),
+                    std::cmp::Ordering::Greater => return Err(TypeError::NotEnoughArgs),
+                    _ => {}
+                }
+
+                self.unify(ctx, return_type1, return_type2)?;
+
+                Ok(want)
+            }
             (TypeInfo::Infer, _) => {
                 self.types[want] = TypeInfo::Ref(have);
                 Ok(have)
@@ -204,8 +218,8 @@ impl TypeEngine {
                     Some(id) => Ok(id),
                     None => match self.typeid_from_path(ctx, path) {
                         Some(id) => match self.typeinfo(id) {
-                            TypeInfo::Function { .. } => Ok(id),
-                            info => Err(TypeError::NotCallable(info.clone())),
+                            TypeInfo::Function { .. } => Ok(self.unify(ctx, expected, id)?),
+                            info => Err(TypeError::NotCallable(dbg!(info).clone())),
                         },
                         None => Err(TypeError::UnknownIdentifier(ident)),
                     },
@@ -286,6 +300,32 @@ impl TypeEngine {
                         }
                     }
                     (_, &op, ExpressionKind::BinaryOperation(_, _, _)) => {
+                        let infer = self.fresh_infer();
+                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
+
+                        let infer = self.fresh_infer();
+                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
+
+                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
+                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
+                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
+                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
+                        }
+                    }
+                    (ExpressionKind::Block(_), &op, _) => {
+                        let infer = self.fresh_infer();
+                        let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
+
+                        let infer = self.fresh_infer();
+                        let rhs_id = self.typecheck_expression(ctx, original_rhs, infer)?;
+
+                        match (self.typeinfo(lhs_id), self.typeinfo(rhs_id)) {
+                            (TypeInfo::Integer, TypeInfo::Integer) if op.is_arith_op() => Ok(self.integer()),
+                            (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => Ok(self.bool()),
+                            (lhs, rhs) => Err(TypeError::UnknownBinOp { lhs: lhs.clone(), op, rhs: rhs.clone() }),
+                        }
+                    }
+                    (_, &op, ExpressionKind::Block(_)) => {
                         let infer = self.fresh_infer();
                         let lhs_id = self.typecheck_expression(ctx, original_lhs, infer)?;
 
@@ -508,14 +548,14 @@ impl Debug for TypeInfoDebug<'_> {
                 write!(f, "fn(")?;
 
                 if let Some((ident, id)) = parameters.first() {
-                    write!(f, "{}: {:?}", ident, self.engine.typeinfo(*id).name(self.engine))?;
+                    write!(f, "{}: {}", ident, self.engine.typeinfo(*id).name(self.engine))?;
                 }
 
                 for (ident, id) in parameters.iter().skip(1) {
-                    write!(f, ", {}: {:?}", ident, self.engine.typeinfo(*id).name(self.engine))?;
+                    write!(f, ", {}: {}", ident, self.engine.typeinfo(*id).name(self.engine))?;
                 }
 
-                write!(f, ") -> {:?}", self.engine.typeinfo(*return_type).name(self.engine))
+                write!(f, ") -> {}", self.engine.typeinfo(*return_type).name(self.engine))
             }
             TypeInfo::Integer => write!(f, "Int"),
             TypeInfo::Struct { full_path, members, .. } => {

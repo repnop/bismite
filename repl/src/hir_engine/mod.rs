@@ -115,11 +115,11 @@ impl HirEngine {
 
     pub fn evaluate_local(&mut self, local: &Local) -> Result<(), HirEngineError> {
         let ctx = self.mk_context();
-        let type_id = self.type_engine.from_hir_type(&ctx, &local.ty).map_err(|e| self.mk_type_error(e))?;
-        let expr = self.evaluate_expression(&local.value, Some(type_id))?;
+        let expected = self.type_engine.from_hir_type(&ctx, &local.ty).map_err(|e| self.mk_type_error(e))?;
+        let expr = self.evaluate_expression(&local.value, Some(expected))?;
         let expr = self.new_expr(expr);
 
-        self.symbol_table.new_binding(symbol_table::Local::new(local.name, expr, type_id, local.mutable));
+        self.symbol_table.new_binding(symbol_table::Local::new(local.name, expr, expected, local.mutable));
 
         Ok(())
     }

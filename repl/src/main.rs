@@ -8,10 +8,22 @@ use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use parser::ParseError;
 use repl::{Repl, ReplError, ReplErrorKind};
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Arguments {
+    #[structopt(long = "clear-screen", short = "c")]
+    clear_screen: bool,
+}
 
 fn main() {
+    let args = Arguments::from_args();
+
     let mut repl = Repl::new();
-    println!("\x1B[2J\x1B[H");
+
+    if args.clear_screen {
+        println!("\x1B[2J\x1B[H");
+    }
 
     loop {
         match repl.run() {

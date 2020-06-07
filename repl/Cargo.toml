@@ -13,4 +13,5 @@ codespan-reporting = "0.9.4"
 hir = { path = "../hir" }
 parser = { path = "../parser" }
 rustyline = "6.1.2"
+structopt = "0.3.14"
 typecheck = { path = "../typecheck" }
