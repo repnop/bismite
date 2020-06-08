@@ -109,7 +109,7 @@ impl<'a> Parser<'a> {
             TokenKind::Struct => Ok(Item::Struct(self.r#struct()?)),
             TokenKind::Module => Ok(Item::Module(self.module(false)?)),
             TokenKind::Use => Ok(Item::Use(self.usage()?)),
-            _ => Err(ParseError::BadToken { got: self.peek()?, expected: vec!["fn", "struct"] }),
+            _ => Err(ParseError::BadToken { got: self.peek()?, expected: vec!["fn", "struct", "module", "use"] }),
         }
     }
 
@@ -210,6 +210,41 @@ impl<'a> Parser<'a> {
         let span = start_span.merge(end_span);
 
         Ok(Block { items, statements, return_expr, span })
+    }
+
+    pub fn r#if(&mut self) -> Result<IfExpr> {
+        let mut ifs = Vec::new();
+        let mut r#else = None;
+
+        let start_span = self.eat(TokenKind::If)?;
+        let condition = self.expression()?;
+        let body = self.block()?;
+        let span = start_span.merge(body.span);
+
+        ifs.push(If { condition, body, span });
+
+        while let Ok(Token { kind: TokenKind::Else, .. }) = self.peek() {
+            let start_span = self.eat(TokenKind::Else)?;
+
+            if let TokenKind::If = self.peek()?.kind {
+                let condition = self.expression()?;
+                let body = self.block()?;
+                let span = start_span.merge(body.span);
+
+                ifs.push(If { condition, body, span });
+            } else {
+                let body = self.block()?;
+                r#else = Some(body);
+                break;
+            }
+        }
+
+        let span = start_span.merge(match &r#else {
+            Some(block) => block.span,
+            None => ifs.last().unwrap().span,
+        });
+
+        Ok(IfExpr { ifs, r#else, span })
     }
 
     pub fn statement_or_expression(&mut self) -> Result<Either<Statement, Expression>> {
@@ -374,6 +409,11 @@ impl<'a> Parser<'a> {
                     _ => Ok(Expression { kind: ExpressionKind::Path(path), span }),
                 }
             }
+            TokenKind::If => {
+                let if_expr = self.r#if()?;
+                let span = if_expr.span;
+                Ok(Expression { kind: ExpressionKind::If(Box::new(if_expr)), span })
+            }
             TokenKind::Unit => {
                 self.token()?;
                 Ok(Expression { kind: ExpressionKind::Unit, span })
@@ -382,6 +422,13 @@ impl<'a> Parser<'a> {
                 let block = self.block()?;
                 let span = block.span;
                 Ok(Expression { kind: ExpressionKind::Block(Box::new(block)), span })
+            }
+            TokenKind::Minus => {
+                let start = self.eat(TokenKind::Minus)?;
+                let expr = self.expression()?;
+                let span = start.merge(expr.span);
+
+                Ok(Expression { kind: ExpressionKind::Unary(UnaryOp::Minus, Box::new(expr)), span })
             }
             b @ TokenKind::True | b @ TokenKind::False => {
                 let value = match &b {

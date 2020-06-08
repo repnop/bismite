@@ -121,11 +121,26 @@ pub enum ExpressionKind {
     Boolean(bool),
     FieldAccess(Box<Expression>, Identifier),
     FnCall(Box<Expression>, Vec<Expression>),
+    If(Box<IfExpr>),
     Integer(i128),
     Path(Path),
     Struct(Box<StructExpr>),
     Unary(UnaryOp, Box<Expression>),
     Unit,
+}
+
+#[derive(Debug, Clone)]
+pub struct IfExpr {
+    pub ifs: Vec<If>,
+    pub r#else: Option<Block>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct If {
+    pub condition: Expression,
+    pub body: Block,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -191,9 +206,17 @@ impl std::fmt::Display for BinOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
     Minus,
+}
+
+impl std::fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryOp::Minus => write!(f, "-"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

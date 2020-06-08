@@ -3,7 +3,7 @@ mod symbol_table;
 
 use hir::{
     visit::Visitor, BinOp, Block, Expression, ExpressionKind, Identifier, Item, ItemKind, Local, Path, Statement,
-    StatementKind,
+    StatementKind, UnaryOp,
 };
 use std::{
     collections::HashMap,
@@ -182,9 +182,24 @@ impl HirEngine {
                         _ => todo!("actual eval stuff"),
                     }
                 }
-                ExpressionKind::FnCall(lhs, args) => self.evaluate_fn_call(lhs, args, Some(expected_type))?,
-                ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
                 ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
+                ExpressionKind::FnCall(lhs, args) => self.evaluate_fn_call(lhs, args, Some(expected_type))?,
+                ExpressionKind::If(if_expr) => {
+                    for if_expr in &if_expr.ifs {
+                        let condition = self.evaluate_expression(&if_expr.condition, None)?;
+
+                        match condition {
+                            expr::Expression::Bool(true) => {
+                                return self.evaluate_block(&if_expr.body, Some(expected_type));
+                            }
+                            expr::Expression::Bool(false) => continue,
+                            _ => unreachable!(),
+                        }
+                    }
+
+                    self.evaluate_block(&if_expr.r#else, Some(expected_type))?
+                }
+                ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
                 ExpressionKind::Path(path) => match path.is_identifier() {
                     Some(ident) => match self.symbol_table.resolve_binding(ident) {
                         Some(local) => self.values[local.value.0].clone(),
@@ -225,6 +240,15 @@ impl HirEngine {
                     expr::Expression::Unit
                 }
                 ExpressionKind::Unit => expr::Expression::Unit,
+                ExpressionKind::Unary(op, expr) => {
+                    let expr = self.evaluate_expression(expr, None)?;
+
+                    match (op, expr) {
+                        (UnaryOp::Minus, expr::Expression::Integer(i)) => expr::Expression::Integer(-i),
+                        (UnaryOp::Minus, expr::Expression::Bool(b)) => expr::Expression::Bool(!b),
+                        _ => unreachable!(),
+                    }
+                }
             })
         })();
 

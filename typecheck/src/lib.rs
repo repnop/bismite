@@ -1,6 +1,6 @@
 use hir::{
     BinOp, Block, Expression, ExpressionKind, Function, Identifier, Path, Statement, StatementKind, Struct, StructExpr,
-    Type, TypeKind,
+    Type, TypeKind, UnaryOp,
 };
 use std::{
     collections::HashMap,
@@ -72,6 +72,7 @@ pub enum TypeError {
     UnknownBinOp { lhs: TypeInfo, op: BinOp, rhs: TypeInfo },
     UnknownIdentifier(Identifier),
     UnknownType(Path),
+    UnknownUnaryOp { op: UnaryOp, info: TypeInfo },
 }
 
 impl TypeError {
@@ -105,6 +106,9 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::TooManyArgs => write!(f, "Too many arguments <todo: fn stuff>"),
             TypeError::NotEnoughArgs => write!(f, "Too few arguments <todo: fn stuff>"),
             TypeError::NotMutable(ident) => write!(f, "Local `{}` was not declared as mutable", ident),
+            TypeError::UnknownUnaryOp { op, info } => {
+                write!(f, "No implmentation for {}(`{}`)", op, info.name(self.engine))
+            }
         }
     }
 }
@@ -294,6 +298,31 @@ impl TypeEngine {
                         op,
                         rhs: self.types[rhs_id].clone(),
                     }),
+                }
+            }
+            ExpressionKind::If(if_expr) => {
+                let expected = {
+                    let infer = self.fresh_infer();
+                    // FIXME: probably less confusing to not early return
+                    // here and check each `if` and then `else` individually
+                    // to report their types
+                    let typeid = self.typecheck_block(ctx, &if_expr.r#else, infer)?;
+                    self.unify(ctx, expected, typeid)?
+                };
+
+                for if_ in &if_expr.ifs {
+                    self.typecheck_expression(ctx, &if_.condition, self.bool())?;
+                    self.typecheck_block(ctx, &if_.body, expected)?;
+                }
+
+                Ok(expected)
+            }
+            ExpressionKind::Unary(op, expr) => {
+                let expr = self.typecheck_expression(ctx, expr, expected)?;
+
+                match self.typeinfo(expr) {
+                    TypeInfo::Integer | TypeInfo::Bool => Ok(expr),
+                    info => Err(TypeError::UnknownUnaryOp { op: *op, info: info.clone() }),
                 }
             }
         }

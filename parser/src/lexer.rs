@@ -87,6 +87,9 @@ pub enum TokenKind {
     Struct,
     #[token("module")]
     Module,
+    #[token("else")]
+    Else,
+
     // FIXME: Move to an enum when we can
     #[token("true")]
     True,
@@ -153,6 +156,7 @@ impl TokenKind {
             Mut => "mut",
             Struct => "struct",
             Module => "module",
+            Else => "else",
             True => "true",
             False => "false",
             Int => "Int",

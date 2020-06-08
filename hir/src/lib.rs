@@ -1,7 +1,7 @@
 mod ty;
 pub mod visit;
 
-pub use ast::BinOp;
+pub use ast::{BinOp, UnaryOp};
 use codespan::Span;
 use std::{
     cell::RefCell,
@@ -267,9 +267,11 @@ pub enum ExpressionKind {
     Boolean(bool),
     FieldAccess(Box<Expression>, Identifier),
     FnCall(Box<Expression>, Vec<Expression>),
+    If(Box<IfExpr>),
     Integer(i128),
     Path(Path),
     Struct(StructExpr),
+    Unary(UnaryOp, Box<Expression>),
     Unit,
 }
 
@@ -297,8 +299,43 @@ impl ExpressionKind {
                 Box::new(Expression::convert(&lhs)),
                 args.iter().map(Expression::convert).collect(),
             ),
-            e => todo!("convert {:?}", e),
+            ast::ExpressionKind::Unary(op, expr) => ExpressionKind::Unary(*op, Box::new(Expression::convert(&expr))),
+            ast::ExpressionKind::If(if_expr) => ExpressionKind::If(Box::new(IfExpr::convert(&if_expr))),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IfExpr {
+    pub ifs: Vec<If>,
+    pub r#else: Block,
+    pub span: Span,
+}
+
+impl IfExpr {
+    pub fn convert(if_expr: &ast::IfExpr) -> Self {
+        Self {
+            ifs: if_expr.ifs.iter().map(If::convert).collect(),
+            r#else: if_expr.r#else.as_ref().map(Block::convert).unwrap_or_else(|| Block {
+                items: Vec::new(),
+                statements: Vec::new(),
+                return_expr: Expression { kind: ExpressionKind::Unit, span: Span::new(0, 0) },
+            }),
+            span: if_expr.span,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct If {
+    pub condition: Expression,
+    pub body: Block,
+    pub span: Span,
+}
+
+impl If {
+    pub fn convert(if_: &ast::If) -> Self {
+        Self { condition: Expression::convert(&if_.condition), body: Block::convert(&if_.body), span: if_.span }
     }
 }
 
