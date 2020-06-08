@@ -218,7 +218,7 @@ impl TypeEngine {
                             self.typecheck_expression(ctx, arg, *id)?;
                         }
 
-                        Ok(return_type)
+                        self.unify(ctx, expected, return_type)
                     }
                     _ => Err(TypeError::NotCallable(self.typeinfo(fn_id).clone())),
                 }

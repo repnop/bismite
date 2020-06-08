@@ -228,6 +228,7 @@ impl<'a> Parser<'a> {
             let start_span = self.eat(TokenKind::Else)?;
 
             if let TokenKind::If = self.peek()?.kind {
+                self.eat(TokenKind::If)?;
                 let condition = self.expression()?;
                 let body = self.block()?;
                 let span = start_span.merge(body.span);
