@@ -10,10 +10,16 @@ use std::{
 pub type Result<T> = std::result::Result<T, TypeError>;
 pub type TypeId = usize;
 
+#[derive(Debug, Copy, Clone)]
+pub struct BindingInfo {
+    pub mutable: bool,
+    pub typeid: TypeId,
+}
+
 #[derive(Default)]
 pub struct Context<'a> {
     pub aliases: HashMap<Path, Path>,
-    pub bindings: HashMap<Identifier, TypeId>,
+    pub bindings: HashMap<Identifier, BindingInfo>,
     pub parent: Option<&'a Context<'a>>,
 }
 
@@ -30,8 +36,8 @@ impl<'a> Context<'a> {
         self.aliases.insert(original, alias);
     }
 
-    pub fn new_binding(&mut self, ident: Identifier, type_id: TypeId) {
-        self.bindings.insert(ident, type_id);
+    pub fn new_binding(&mut self, ident: Identifier, binding: BindingInfo) {
+        self.bindings.insert(ident, binding);
     }
 
     pub fn resolve_path_alias(&self, path: &Path) -> Option<&Path> {
@@ -44,9 +50,9 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn resolve_binding(&self, ident: Identifier) -> Option<TypeId> {
+    pub fn resolve_binding(&self, ident: Identifier) -> Option<BindingInfo> {
         match self.bindings.get(&ident) {
-            Some(id) => Some(*id),
+            Some(binding) => Some(*binding),
             None => match &self.parent {
                 Some(parent) => parent.resolve_binding(ident),
                 None => None,
@@ -60,6 +66,7 @@ pub enum TypeError {
     NoField(TypeInfo, Identifier),
     NotCallable(TypeInfo),
     NotEnoughArgs,
+    NotMutable(Identifier),
     NotValidRhs,
     TooManyArgs,
     UnknownBinOp { lhs: TypeInfo, op: BinOp, rhs: TypeInfo },
@@ -97,6 +104,7 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::NotCallable(info) => write!(f, "Type `{}` is not a function", info.name(self.engine)),
             TypeError::TooManyArgs => write!(f, "Too many arguments <todo: fn stuff>"),
             TypeError::NotEnoughArgs => write!(f, "Too few arguments <todo: fn stuff>"),
+            TypeError::NotMutable(ident) => write!(f, "Local `{}` was not declared as mutable", ident),
         }
     }
 }
@@ -218,7 +226,7 @@ impl TypeEngine {
             }
             ExpressionKind::Path(path) => match path.is_identifier() {
                 Some(ident) => match ctx.resolve_binding(ident) {
-                    Some(id) => Ok(id),
+                    Some(binding) => Ok(binding.typeid),
                     None => match self.typeid_from_path(ctx, path) {
                         Some(id) => match self.typeinfo(id) {
                             TypeInfo::Function { .. } => Ok(self.unify(ctx, expected, id)?),
@@ -249,7 +257,8 @@ impl TypeEngine {
                     }
                     ExpressionKind::Path(path) => match path.is_identifier() {
                         Some(ident) => match ctx.resolve_binding(ident) {
-                            Some(id) => id,
+                            Some(binding) if binding.mutable => binding.typeid,
+                            Some(_) => return Err(TypeError::NotMutable(ident)),
                             None => return Err(TypeError::UnknownIdentifier(ident)),
                         },
                         None => return Err(TypeError::NotValidRhs),
@@ -336,7 +345,7 @@ impl TypeEngine {
 
         for fp in &function.parameters {
             let parameter_id = self.from_hir_type(&ctx, &fp.ty)?;
-            ctx.bindings.insert(fp.name, parameter_id);
+            ctx.bindings.insert(fp.name, BindingInfo { mutable: false, typeid: parameter_id });
             parameters.push((fp.name, parameter_id));
         }
 
@@ -370,7 +379,7 @@ impl TypeEngine {
         &mut self,
         ctx: &Context<'_>,
         statement: &Statement,
-    ) -> Result<Option<(Identifier, TypeId)>> {
+    ) -> Result<Option<(Identifier, BindingInfo)>> {
         match &statement.kind {
             StatementKind::Expression(e) => {
                 let infer = self.fresh_infer();
@@ -378,10 +387,10 @@ impl TypeEngine {
                 Ok(None)
             }
             StatementKind::Local(local) => {
-                let ty_id = self.from_hir_type(ctx, &local.ty)?;
-                self.typecheck_expression(ctx, &local.value, ty_id)?;
+                let typeid = self.from_hir_type(ctx, &local.ty)?;
+                self.typecheck_expression(ctx, &local.value, typeid)?;
 
-                Ok(Some((local.name, ty_id)))
+                Ok(Some((local.name, BindingInfo { mutable: local.mutable, typeid })))
             }
         }
     }

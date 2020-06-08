@@ -335,7 +335,11 @@ impl HirEngine {
     fn mk_context(&self) -> Context<'static> {
         Context {
             aliases: self.aliases.get(&self.current_path).cloned().unwrap_or_default(),
-            bindings: self.symbol_table.bindings().map(|local| (local.name, local.ty)).collect(),
+            bindings: self
+                .symbol_table
+                .bindings()
+                .map(|local| (local.name, typecheck::BindingInfo { mutable: local.mutable, typeid: local.ty }))
+                .collect(),
             parent: None,
         }
     }
