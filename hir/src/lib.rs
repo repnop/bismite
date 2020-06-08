@@ -166,6 +166,11 @@ pub struct Identifier {
 }
 
 impl Identifier {
+    pub fn new(s: &str) -> Self {
+        let sym = INTERNER.with(|i| i.borrow_mut().get_or_intern(s));
+        Identifier::with_dummy_span(sym)
+    }
+
     pub fn string(self) -> String {
         INTERNER.with(|i| i.borrow().resolve(self.name).unwrap().to_owned())
     }

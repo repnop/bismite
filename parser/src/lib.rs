@@ -191,15 +191,16 @@ impl<'a> Parser<'a> {
         let mut items = Vec::new();
         let mut statements = Vec::new();
         let mut return_expr = None;
+        let mut ate_expr = false;
 
         while self.peek()?.kind != TokenKind::RightBrace {
             match self.peek()?.kind {
                 TokenKind::Fn | TokenKind::Struct => items.push(self.item()?),
                 _ => match self.statement_or_expression()? {
-                    Either::Left(stmt) => statements.push(stmt),
+                    Either::Left(stmt) if !ate_expr => statements.push(stmt),
                     Either::Right(expr) if return_expr.is_none() => {
                         return_expr = Some(expr);
-                        break;
+                        ate_expr = true;
                     }
                     _ => break,
                 },
@@ -492,13 +493,9 @@ impl<'a> Parser<'a> {
 
         segments.push(self.identifier()?);
 
-        while let Ok(Token { kind: TokenKind::Identifier(_), .. }) = self.peek() {
+        while let Ok(Token { kind: TokenKind::PathSep, .. }) = self.peek() {
+            self.eat(TokenKind::PathSep)?;
             segments.push(self.identifier()?);
-
-            match self.peek() {
-                Ok(Token { kind: TokenKind::PathSep, .. }) => self.eat(TokenKind::PathSep)?,
-                _ => break,
-            };
         }
 
         let span = {
@@ -573,6 +570,7 @@ impl<'a> Parser<'a> {
             TokenKind::Minus => Ok(BinOp::Subtract),
             TokenKind::Star => Ok(BinOp::Multiply),
             TokenKind::Slash => Ok(BinOp::Divide),
+            TokenKind::DoubleEq => Ok(BinOp::Equal),
             _ => Err(ParseError::BadToken { got: token, expected: vec!["binary operator"] }),
         }
     }

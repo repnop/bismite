@@ -176,9 +176,17 @@ pub enum BinOp {
     Multiply,
     Divide,
     LogicalAnd,
+    Equal,
 }
 
 impl BinOp {
+    pub fn is_comparison_op(self) -> bool {
+        match self {
+            BinOp::Equal => true,
+            _ => false,
+        }
+    }
+
     pub fn is_arith_op(self) -> bool {
         match self {
             BinOp::Add | BinOp::Subtract | BinOp::Multiply | BinOp::Divide => true,
@@ -202,6 +210,7 @@ impl std::fmt::Display for BinOp {
             BinOp::Multiply => write!(f, "*"),
             BinOp::Divide => write!(f, "/"),
             BinOp::LogicalAnd => write!(f, "&&"),
+            BinOp::Equal => write!(f, "=="),
         }
     }
 }

@@ -37,11 +37,12 @@ pub struct HirEngine {
     symbol_table: SymbolTable,
     current_path: Path,
     aliases: HashMap<Path, HashMap<Path, Path>>,
-    functions: HashMap<Path, (hir::Function, TypeId)>,
+    functions: HashMap<Path, (hir::Function, TypeId, usize)>,
     values: Vec<expr::Expression>,
     do_typechecking: bool,
     expr_eval_count: usize,
     expr_eval_limit: usize,
+    unnamable_count: usize,
 }
 
 impl Default for HirEngine {
@@ -56,6 +57,7 @@ impl Default for HirEngine {
             do_typechecking: true,
             expr_eval_count: 0,
             expr_eval_limit: 100,
+            unnamable_count: 0,
         }
     }
 }
@@ -80,11 +82,11 @@ impl HirEngine {
     }
 
     pub fn evaluate_item(&mut self, item: &Item) -> Result<(), HirEngineError> {
+        self.type_engine.typecheck_item(&self.mk_context(), item).map_err(|e| self.mk_type_error(e))?;
+
         match &item.kind {
-            ItemKind::Struct(s) => {
-                let ctx = self.mk_context();
-                self.type_engine.register_struct(&ctx, &self.current_path, s).map_err(|e| self.mk_type_error(e))
-            }
+            // alreayd inserted in typechecker
+            ItemKind::Struct(_) => Ok(()),
             ItemKind::Module(module) => {
                 self.current_path = self.current_path.with_ident(module.name);
 
@@ -115,11 +117,9 @@ impl HirEngine {
             }
             ItemKind::Function(f) => {
                 let ctx = self.mk_context();
-                let id = self
-                    .type_engine
-                    .typecheck_function(&ctx, &self.current_path, f)
-                    .map_err(|e| self.mk_type_error(e))?;
-                self.functions.insert(self.current_path.with_ident(f.name), (f.clone(), id));
+                let path = self.current_path.with_ident(f.name);
+                let id = self.type_engine.typeid_from_path(&ctx, &path).unwrap();
+                self.functions.insert(path, (f.clone(), id, self.unnamable_count));
 
                 Ok(())
             }
@@ -166,20 +166,24 @@ impl HirEngine {
 
         let res = (|| {
             Ok(match &expr.kind {
-                ExpressionKind::Block(block) => self.evaluate_block(block, Some(expected_type))?,
+                ExpressionKind::Block(block) => self.evaluate_block(block, Some(expected_type), None)?,
                 ExpressionKind::BinaryOperation(lhs, op, rhs) => {
                     let lhs = self.evaluate_expression(lhs, None)?;
                     let rhs = self.evaluate_expression(rhs, None)?;
 
-                    match (lhs, rhs) {
-                        (expr::Expression::Integer(lhs), expr::Expression::Integer(rhs)) => match op {
-                            BinOp::Add => expr::Expression::Integer(lhs + rhs),
-                            BinOp::Subtract => expr::Expression::Integer(lhs - rhs),
-                            BinOp::Multiply => expr::Expression::Integer(lhs * rhs),
-                            BinOp::Divide => expr::Expression::Integer(lhs / rhs),
-                            BinOp::LogicalAnd => todo!(),
+                    match op {
+                        op if op.is_arith_op() => match (lhs, rhs) {
+                            (expr::Expression::Integer(lhs), expr::Expression::Integer(rhs)) => match op {
+                                BinOp::Add => expr::Expression::Integer(lhs + rhs),
+                                BinOp::Subtract => expr::Expression::Integer(lhs - rhs),
+                                BinOp::Multiply => expr::Expression::Integer(lhs * rhs),
+                                BinOp::Divide => expr::Expression::Integer(lhs / rhs),
+                                _ => unreachable!(),
+                            },
+                            _ => todo!("actual eval stuff"),
                         },
-                        _ => todo!("actual eval stuff"),
+                        BinOp::Equal => expr::Expression::Bool(self.expressions_are_equal(&lhs, &rhs)),
+                        _ => unreachable!(),
                     }
                 }
                 ExpressionKind::Boolean(b) => expr::Expression::Bool(*b),
@@ -190,21 +194,29 @@ impl HirEngine {
 
                         match condition {
                             expr::Expression::Bool(true) => {
-                                return self.evaluate_block(&if_expr.body, Some(expected_type));
+                                return self.evaluate_block(&if_expr.body, Some(expected_type), None);
                             }
                             expr::Expression::Bool(false) => continue,
                             _ => unreachable!(),
                         }
                     }
 
-                    self.evaluate_block(&if_expr.r#else, Some(expected_type))?
+                    self.evaluate_block(&if_expr.r#else, Some(expected_type), None)?
                 }
                 ExpressionKind::Integer(i) => expr::Expression::Integer(*i),
                 ExpressionKind::Path(path) => match path.is_identifier() {
                     Some(ident) => match self.symbol_table.resolve_binding(ident) {
                         Some(local) => self.values[local.value.0].clone(),
-                        None => match self.functions.get(path) {
-                            Some(_) => expr::Expression::Function(path.clone()),
+                        None => match self
+                            .aliases
+                            .get(&self.current_path)
+                            .and_then(|map| {
+                                let real_path = map.get(path)?;
+                                Some((real_path, self.functions.get(real_path)?))
+                            })
+                            .or_else(|| Some((path, self.functions.get(path)?)))
+                        {
+                            Some((real_path, _)) => expr::Expression::Function(real_path.clone()),
                             None => return Err(HirEngineError::UnknownIdentifier(ident)),
                         },
                     },
@@ -266,7 +278,8 @@ impl HirEngine {
     ) -> Result<expr::Expression, HirEngineError> {
         match self.evaluate_expression(callable, None)? {
             expr::Expression::Function(path) => {
-                let (f, fn_id) = self.functions.get(&path).unwrap().clone();
+                self.do_typechecking = false;
+                let (f, fn_id, unnamable) = self.functions.get(&path).unwrap().clone();
                 let parameters = match self.type_engine.typeinfo(fn_id) {
                     TypeInfo::Function { parameters, .. } => parameters.clone(),
                     _ => unreachable!(),
@@ -274,6 +287,7 @@ impl HirEngine {
                 let iter = parameters.iter().zip(args.iter());
 
                 let mut new_symbols = SymbolTable::new();
+                let old_aliases = self.aliases.clone();
 
                 for (param, arg) in iter {
                     let expr = self.evaluate_expression(arg, Some(param.1))?;
@@ -285,9 +299,14 @@ impl HirEngine {
                 let old_symtab = self.symbol_table.clone();
                 self.symbol_table = new_symbols;
 
-                let res = self.evaluate_block(&f.body, expected_type);
+                self.current_path = self.current_path.with_ident(f.name);
 
+                let res = self.evaluate_block(&f.body, expected_type, Some(unnamable));
+
+                self.current_path.pop();
+                self.aliases = old_aliases;
                 self.symbol_table = old_symtab;
+                self.do_typechecking = true;
 
                 res
             }
@@ -299,12 +318,52 @@ impl HirEngine {
         &mut self,
         block: &Block,
         expected_type: Option<TypeId>,
+        existing_unnamable: Option<usize>,
     ) -> Result<expr::Expression, HirEngineError> {
         let old_symtab = self.symbol_table.clone();
+        let old_aliases = self.aliases.clone();
 
         self.symbol_table = SymbolTable::with_parent(&old_symtab);
+        self.current_path = self.current_path.with_ident(Identifier::new(&match existing_unnamable {
+            Some(n) => n.to_string(),
+            None => {
+                let n = self.unnamable_count.to_string();
+                self.unnamable_count += 1;
+                n
+            }
+        }));
 
         let res = (|| {
+            for item in &block.items {
+                self.evaluate_item(item)?;
+                match &item.kind {
+                    ItemKind::Struct(s) => {
+                        self.aliases
+                            .entry(self.current_path.clone())
+                            .or_default()
+                            .insert(Path::from_identifier(s.name), self.current_path.with_ident(s.name));
+                    }
+                    ItemKind::Function(f) => {
+                        self.aliases
+                            .entry(self.current_path.clone())
+                            .or_default()
+                            .insert(Path::from_identifier(f.name), self.current_path.with_ident(f.name));
+                    }
+                    ItemKind::Module(m) => {
+                        self.aliases
+                            .entry(self.current_path.clone())
+                            .or_default()
+                            .insert(Path::from_identifier(m.name), self.current_path.with_ident(m.name));
+                    }
+                    ItemKind::Use(u) => {
+                        self.aliases
+                            .entry(self.current_path.clone())
+                            .or_default()
+                            .insert(Path::from_identifier(u.path.last()), u.path.clone());
+                    }
+                }
+            }
+
             for statement in &block.statements {
                 self.evaluate_statement(statement)?;
             }
@@ -312,9 +371,32 @@ impl HirEngine {
             self.evaluate_expression(&block.return_expr, expected_type)
         })();
 
+        self.current_path.pop();
         self.symbol_table = old_symtab;
+        self.aliases = old_aliases;
 
         res
+    }
+
+    fn expressions_are_equal(&self, lhs: &expr::Expression, rhs: &expr::Expression) -> bool {
+        match (lhs, rhs) {
+            (expr::Expression::Integer(lhs), expr::Expression::Integer(rhs)) => lhs == rhs,
+            (expr::Expression::Bool(lhs), expr::Expression::Bool(rhs)) => lhs == rhs,
+            (expr::Expression::Unit, expr::Expression::Unit) => true,
+            (expr::Expression::Struct(_, members), expr::Expression::Struct(_, members2)) => {
+                for (ident, expr) in members.iter() {
+                    let expr1 = &self.expr_arena()[expr.0];
+                    let expr2 = &self.expr_arena()[members2.get(ident).unwrap().0];
+                    if !self.expressions_are_equal(expr1, expr2) {
+                        return false;
+                    }
+                }
+
+                true
+            }
+            (expr::Expression::Function(p), expr::Expression::Function(p2)) => p == p2,
+            _ => unreachable!(),
+        }
     }
 
     fn get_place(&mut self, expr: &Expression) -> Result<&mut expr::Expression, HirEngineError> {

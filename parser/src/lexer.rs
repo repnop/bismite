@@ -61,6 +61,8 @@ pub enum TokenKind {
     Star,
     #[token("/")]
     Slash,
+    #[token("==")]
+    DoubleEq,
     #[token("=")]
     Eq,
     #[token(":")]
@@ -123,7 +125,7 @@ pub enum TokenKind {
 impl TokenKind {
     pub fn is_binop(&self) -> bool {
         match self {
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash => true,
+            TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::DoubleEq => true,
             _ => false,
         }
     }
@@ -145,6 +147,7 @@ impl TokenKind {
             Minus => "-",
             Star => "*",
             Slash => "/",
+            DoubleEq => "==",
             Eq => "=",
             Colon => ":",
             Period => ".",

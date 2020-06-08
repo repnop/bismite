@@ -1,6 +1,6 @@
 use hir::{
-    BinOp, Block, Expression, ExpressionKind, Function, Identifier, Path, Statement, StatementKind, Struct, StructExpr,
-    Type, TypeKind, UnaryOp,
+    BinOp, Block, Expression, ExpressionKind, Function, Identifier, Item, ItemKind, Path, Statement, StatementKind,
+    Struct, StructExpr, Type, TypeKind, UnaryOp,
 };
 use std::{
     collections::HashMap,
@@ -62,6 +62,7 @@ impl<'a> Context<'a> {
 }
 
 pub enum TypeError {
+    CannotInferType,
     MismatchedTypes { wanted: TypeInfo, have: TypeInfo },
     NoField(TypeInfo, Identifier),
     NotCallable(TypeInfo),
@@ -100,7 +101,7 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::UnknownBinOp { lhs, op, rhs } => {
                 write!(f, "No implmentation for `{}` {} `{}`", lhs.name(self.engine), op, rhs.name(self.engine))
             }
-            TypeError::UnknownIdentifier(ident) => write!(f, "Unknown identifier `{}`", ident),
+            TypeError::UnknownIdentifier(ident) => write!(f, "(TypeError) Unknown identifier `{}`", ident),
             TypeError::NotValidRhs => write!(f, "Not a valid right hand side expression"),
             TypeError::NotCallable(info) => write!(f, "Type `{}` is not a function", info.name(self.engine)),
             TypeError::TooManyArgs => write!(f, "Too many arguments <todo: fn stuff>"),
@@ -109,6 +110,7 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::UnknownUnaryOp { op, info } => {
                 write!(f, "No implmentation for {}(`{}`)", op, info.name(self.engine))
             }
+            TypeError::CannotInferType => write!(f, "Cannot infer type"),
         }
     }
 }
@@ -117,6 +119,8 @@ impl Debug for TypeErrorDebug<'_> {
 pub struct TypeEngine {
     types: Vec<TypeInfo>,
     name_map: HashMap<Path, TypeId>,
+    current_path: Path,
+    unnamable_count: usize,
 }
 
 impl TypeEngine {
@@ -172,6 +176,7 @@ impl TypeEngine {
 
                 Ok(want)
             }
+            (TypeInfo::Infer, TypeInfo::Infer) => Err(TypeError::CannotInferType),
             (TypeInfo::Infer, _) => {
                 self.types[want] = TypeInfo::Ref(have);
                 Ok(have)
@@ -234,12 +239,12 @@ impl TypeEngine {
                     None => match self.typeid_from_path(ctx, path) {
                         Some(id) => match self.typeinfo(id) {
                             TypeInfo::Function { .. } => Ok(self.unify(ctx, expected, id)?),
-                            info => Err(TypeError::NotCallable(dbg!(info).clone())),
+                            info => Err(TypeError::NotCallable(info.clone())),
                         },
                         None => Err(TypeError::UnknownIdentifier(ident)),
                     },
                 },
-                None => todo!("non ident path check"),
+                None => self.name_map.get(&path).copied().ok_or_else(|| TypeError::UnknownType(path.clone())),
             },
             ExpressionKind::FieldAccess(lhs, ident) => {
                 let infer = self.fresh_infer();
@@ -293,6 +298,10 @@ impl TypeEngine {
                     (TypeInfo::Bool, TypeInfo::Bool) if op.is_logic_op() => {
                         Ok(self.unify(ctx, expected, self.bool())?)
                     }
+                    (_, _) if op == BinOp::Equal => {
+                        self.unify(ctx, lhs_id, rhs_id)?;
+                        Ok(self.bool())
+                    }
                     (_, _) => Err(TypeError::UnknownBinOp {
                         lhs: self.types[lhs_id].clone(),
                         op,
@@ -335,8 +344,8 @@ impl TypeEngine {
         Ok(())
     }
 
-    pub fn register_struct(&mut self, ctx: &Context<'_>, path: &Path, strukt: &Struct) -> Result<()> {
-        let struct_path = path.with_ident(strukt.name);
+    pub fn typecheck_struct(&mut self, ctx: &Context<'_>, strukt: &Struct) -> Result<TypeId> {
+        let struct_path = self.current_path.with_ident(strukt.name);
 
         let type_info = TypeInfo::Struct {
             members: {
@@ -364,10 +373,10 @@ impl TypeEngine {
         self.name_map.insert(struct_path, self.types.len());
         self.types.push(type_info);
 
-        Ok(())
+        Ok(self.types.len() - 1)
     }
 
-    pub fn typecheck_function(&mut self, ctx: &Context<'_>, path: &Path, function: &Function) -> Result<TypeId> {
+    pub fn typecheck_function(&mut self, ctx: &Context<'_>, function: &Function) -> Result<TypeId> {
         let mut ctx = Context { aliases: ctx.aliases.clone(), bindings: HashMap::new(), parent: None };
 
         let mut parameters = Vec::new();
@@ -381,13 +390,15 @@ impl TypeEngine {
         let return_type = self.from_hir_type(&ctx, &function.return_type)?;
 
         let fn_id = self.types.len();
-        self.name_map.insert(path.with_ident(function.name), fn_id);
-        ctx.aliases.insert(Path::from_identifier(function.name), path.with_ident(function.name));
+        self.name_map.insert(self.current_path.with_ident(function.name), fn_id);
+        ctx.aliases.insert(Path::from_identifier(function.name), self.current_path.with_ident(function.name));
 
         let type_info = TypeInfo::Function { parameters, return_type };
         self.types.push(type_info);
 
+        self.current_path = self.current_path.with_ident(function.name);
         self.typecheck_block(&ctx, &function.body, return_type)?;
+        self.current_path.pop();
 
         Ok(fn_id)
     }
@@ -395,13 +406,37 @@ impl TypeEngine {
     pub fn typecheck_block(&mut self, ctx: &Context<'_>, block: &Block, expected: TypeId) -> Result<TypeId> {
         let mut child_ctx = ctx.new_child();
 
+        let unnamable = Identifier::new(&self.unnamable_count.to_string());
+        self.unnamable_count += 1;
+        self.current_path = self.current_path.with_ident(unnamable);
+
+        for item in &block.items {
+            self.typecheck_item(ctx, item)?;
+
+            match &item.kind {
+                ItemKind::Struct(s) => {
+                    child_ctx.aliases.insert(Path::from_identifier(s.name), self.current_path.with_ident(s.name));
+                }
+                ItemKind::Function(f) => {
+                    child_ctx.aliases.insert(Path::from_identifier(f.name), self.current_path.with_ident(f.name));
+                }
+                ItemKind::Module(m) => {
+                    child_ctx.aliases.insert(Path::from_identifier(m.name), self.current_path.with_ident(m.name));
+                }
+                _ => {}
+            }
+        }
+
         for statement in &block.statements {
             if let Some((name, id)) = self.typecheck_statement(&child_ctx, statement)? {
                 child_ctx.bindings.insert(name, id);
             }
         }
 
-        self.typecheck_expression(&child_ctx, &block.return_expr, expected)
+        let res = self.typecheck_expression(&child_ctx, &block.return_expr, expected);
+        self.current_path.pop();
+
+        res
     }
 
     pub fn typecheck_statement(
@@ -422,6 +457,30 @@ impl TypeEngine {
                 Ok(Some((local.name, BindingInfo { mutable: local.mutable, typeid })))
             }
         }
+    }
+
+    pub fn typecheck_item(&mut self, ctx: &Context<'_>, item: &Item) -> Result<()> {
+        match &item.kind {
+            ItemKind::Module(module) => {
+                self.current_path = self.current_path.with_ident(module.name);
+                let ctx = ctx.new_child();
+                for item in &module.items {
+                    self.typecheck_item(&ctx, item)?;
+                }
+                self.current_path.pop();
+            }
+            ItemKind::Struct(strukt) => {
+                self.typecheck_struct(ctx, strukt)?;
+            }
+            ItemKind::Function(f) => {
+                self.typecheck_function(ctx, f)?;
+            }
+            ItemKind::Use(u) => {
+                self.typeid_from_path(ctx, &u.path).ok_or_else(|| TypeError::UnknownType(u.path.clone()))?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn typeid_from_path(&self, ctx: &Context<'_>, path: &Path) -> Option<TypeId> {
@@ -476,7 +535,12 @@ impl TypeEngine {
 
 impl Default for TypeEngine {
     fn default() -> Self {
-        Self { types: vec![TypeInfo::Integer, TypeInfo::Bool, TypeInfo::Unit], name_map: HashMap::new() }
+        Self {
+            types: vec![TypeInfo::Integer, TypeInfo::Bool, TypeInfo::Unit],
+            name_map: HashMap::new(),
+            current_path: Path::new(),
+            unnamable_count: 0,
+        }
     }
 }
 
