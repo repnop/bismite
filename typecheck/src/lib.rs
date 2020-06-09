@@ -397,8 +397,13 @@ impl TypeEngine {
         self.types.push(type_info);
 
         self.current_path = self.current_path.with_ident(function.name);
-        self.typecheck_block(&ctx, &function.body, return_type)?;
+        let res = self.typecheck_block(&ctx, &function.body, return_type);
         self.current_path.pop();
+
+        if res.is_err() {
+            self.name_map.remove(&self.current_path.with_ident(function.name));
+            res?;
+        }
 
         Ok(fn_id)
     }

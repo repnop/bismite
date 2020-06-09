@@ -290,8 +290,13 @@ impl HirEngine {
                 let old_aliases = self.aliases.clone();
 
                 for (param, arg) in iter {
-                    let expr = self.evaluate_expression(arg, Some(param.1))?;
-                    let expr = self.new_expr(expr);
+                    let expr = self.evaluate_expression(arg, Some(param.1));
+
+                    if expr.is_err() {
+                        self.do_typechecking = true;
+                    }
+
+                    let expr = self.new_expr(expr?);
 
                     new_symbols.new_binding(symbol_table::Local::new(param.0, expr, param.1, false));
                 }
