@@ -81,8 +81,8 @@ impl Repl {
             LineReturn::Error(e) => return Err(ReplError::new(String::new(), ReplErrorKind::Readline(e))),
         };
 
-        self.editor.add_history_entry(&*line);
         if self.eval_repl_command(&line) {
+            self.editor.add_history_entry(&*line);
             return Ok(None);
         }
 
@@ -124,6 +124,8 @@ impl Repl {
                 }
             }
         }
+
+        self.editor.add_history_entry(self.code.trim());
 
         let mut eval_output = None;
         for node in nodes {

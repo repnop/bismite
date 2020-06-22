@@ -99,6 +99,8 @@ pub enum TokenKind {
     False,
     #[token("Int")]
     Int,
+    #[token("Bool")]
+    Bool,
     #[token("Unit")]
     Unit,
 
@@ -163,6 +165,7 @@ impl TokenKind {
             True => "true",
             False => "false",
             Int => "Int",
+            Bool => "Bool",
             Unit => "Unit",
             DoubleQuote => "\"",
             SingleQuote => "'",

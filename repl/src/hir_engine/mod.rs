@@ -302,6 +302,7 @@ impl HirEngine {
                 }
 
                 let old_symtab = self.symbol_table.clone();
+                let old_path = self.current_path.clone();
                 self.symbol_table = new_symbols;
 
                 self.current_path = self.current_path.with_ident(f.name);

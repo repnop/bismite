@@ -474,6 +474,10 @@ impl<'a> Parser<'a> {
                 self.eat(TokenKind::Int)?;
                 Ok(Type { kind: TypeKind::Integer, span })
             }
+            TokenKind::Bool => {
+                self.eat(TokenKind::Bool)?;
+                Ok(Type { kind: TypeKind::Bool, span })
+            }
             TokenKind::Identifier(_) => Ok(Type { kind: TypeKind::Named(self.path()?), span }),
             _ => Err(ParseError::BadToken { got: token, expected: vec!["type"] }),
         }

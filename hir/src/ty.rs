@@ -43,10 +43,10 @@ impl TypeKind {
 impl Display for TypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            TypeKind::Integer => write!(f, "int"),
-            TypeKind::Bool => write!(f, "bool"),
+            TypeKind::Integer => write!(f, "Int"),
+            TypeKind::Bool => write!(f, "Bool"),
             TypeKind::Path(p) => write!(f, "{}", p),
-            TypeKind::Unit => write!(f, "unit"),
+            TypeKind::Unit => write!(f, "Unit"),
             TypeKind::Infer => write!(f, "_"),
         }
     }
