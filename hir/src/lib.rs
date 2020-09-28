@@ -22,6 +22,10 @@ pub struct Module {
 }
 
 impl Module {
+    pub fn new(name: Identifier, items: Vec<Item>, span: Span) -> Self {
+        Self { name, items, span }
+    }
+
     pub fn convert(module: &ast::Module) -> Self {
         Self {
             name: Identifier::convert(&module.name),
@@ -159,7 +163,7 @@ impl Path {
     }
 }
 
-#[derive(Clone, Copy, Eq, Debug)]
+#[derive(Clone, Copy, Eq)]
 pub struct Identifier {
     pub name: Sym,
     pub span: Span,
@@ -184,6 +188,12 @@ impl Identifier {
 }
 
 impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::fmt::Debug for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         INTERNER.with(|i| write!(f, "{}", i.borrow_mut().resolve(self.name).unwrap()))
     }
@@ -322,9 +332,9 @@ impl IfExpr {
         Self {
             ifs: if_expr.ifs.iter().map(If::convert).collect(),
             r#else: if_expr.r#else.as_ref().map(Block::convert).unwrap_or_else(|| Block {
-                items: Vec::new(),
                 statements: Vec::new(),
                 return_expr: Expression { kind: ExpressionKind::Unit, span: Span::new(0, 0) },
+                span: Span::new(0, 0),
             }),
             span: if_expr.span,
         }
@@ -380,20 +390,20 @@ impl StructExprMember {
 
 #[derive(Clone, Debug)]
 pub struct Block {
-    pub items: Vec<Item>,
     pub statements: Vec<Statement>,
     pub return_expr: Expression,
+    pub span: Span,
 }
 
 impl Block {
     pub fn convert(block: &ast::Block) -> Self {
         Self {
-            items: block.items.iter().map(Item::convert).collect(),
             statements: block.statements.iter().map(Statement::convert).collect(),
             return_expr: block.return_expr.as_ref().map(Expression::convert).unwrap_or_else(|| Expression {
                 kind: ExpressionKind::Unit,
                 span: block.statements.last().map(|s| s.span).unwrap_or(block.span),
             }),
+            span: block.span,
         }
     }
 }

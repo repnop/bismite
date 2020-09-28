@@ -456,26 +456,3 @@ impl HirEngine {
         }
     }
 }
-
-struct UseCollector<'a> {
-    aliases: &'a mut HashMap<Path, Path>,
-}
-
-impl<'a> UseCollector<'a> {
-    fn new(aliases: &'a mut HashMap<Path, Path>) -> Self {
-        Self { aliases }
-    }
-}
-
-impl Visitor for UseCollector<'_> {
-    fn visit_use(&mut self, usage: &hir::Use) {
-        let path = usage.path.clone();
-        self.aliases.insert(Path::from_identifier(path.last()), path);
-    }
-
-    fn visit_item(&mut self, item: &Item) {
-        if let ItemKind::Use(usage) = &item.kind {
-            self.visit_use(usage);
-        }
-    }
-}

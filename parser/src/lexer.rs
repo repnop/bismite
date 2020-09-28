@@ -120,7 +120,7 @@ pub enum TokenKind {
     Generic(String),
     Character(char),
 
-    #[regex("[\n\r\t ]+")]
+    #[regex("[\n\r\t ]+", logos::skip)]
     Whitespace,
 }
 

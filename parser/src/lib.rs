@@ -188,14 +188,14 @@ impl<'a> Parser<'a> {
     pub fn block(&mut self) -> Result<Block> {
         let start_span = self.eat(TokenKind::LeftBrace)?;
 
-        let mut items = Vec::new();
+        let mut uses = Vec::new();
         let mut statements = Vec::new();
         let mut return_expr = None;
         let mut ate_expr = false;
 
         while self.peek()?.kind != TokenKind::RightBrace {
             match self.peek()?.kind {
-                TokenKind::Fn | TokenKind::Struct => items.push(self.item()?),
+                TokenKind::Use => uses.push(self.usage()?),
                 _ => match self.statement_or_expression()? {
                     Either::Left(stmt) if !ate_expr => statements.push(stmt),
                     Either::Right(expr) if return_expr.is_none() => {
@@ -210,7 +210,7 @@ impl<'a> Parser<'a> {
         let end_span = self.eat(TokenKind::RightBrace)?;
         let span = start_span.merge(end_span);
 
-        Ok(Block { items, statements, return_expr, span })
+        Ok(Block { uses, statements, return_expr, span })
     }
 
     pub fn r#if(&mut self) -> Result<IfExpr> {
@@ -583,6 +583,7 @@ impl<'a> Parser<'a> {
     pub fn token(&mut self) -> Result<Token> {
         match self.peeks.pop_front() {
             Some(tkn) => Ok(tkn),
+            // TODO: remove loop
             None => loop {
                 let token = self.lexer.next().ok_or(ParseError::Eof)?;
 

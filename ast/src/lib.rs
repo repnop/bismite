@@ -60,7 +60,7 @@ pub struct FunctionParameter {
 
 #[derive(Clone, Debug)]
 pub struct Block {
-    pub items: Vec<Item>,
+    pub uses: Vec<Use>,
     pub statements: Vec<Statement>,
     pub return_expr: Option<Expression>,
     pub span: Span,

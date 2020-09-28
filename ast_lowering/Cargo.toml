@@ -1,5 +1,5 @@
 [package]
-name = "parser"
+name = "ast_lowering"
 version = "0.1.0"
 authors = ["Wesley Norris <repnop@outlook.com>"]
 edition = "2018"
@@ -8,5 +8,7 @@ edition = "2018"
 
 [dependencies]
 ast = { path = "../ast" }
-codespan = "0.9.5"
-logos = "0.11.4"
+hir = { path = "../hir" }
+
+[dev-dependencies]
+parser = { path = "../parser" }

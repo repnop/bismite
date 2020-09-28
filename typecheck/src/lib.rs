@@ -415,23 +415,6 @@ impl TypeEngine {
         self.unnamable_count += 1;
         self.current_path = self.current_path.with_ident(unnamable);
 
-        for item in &block.items {
-            self.typecheck_item(ctx, item)?;
-
-            match &item.kind {
-                ItemKind::Struct(s) => {
-                    child_ctx.aliases.insert(Path::from_identifier(s.name), self.current_path.with_ident(s.name));
-                }
-                ItemKind::Function(f) => {
-                    child_ctx.aliases.insert(Path::from_identifier(f.name), self.current_path.with_ident(f.name));
-                }
-                ItemKind::Module(m) => {
-                    child_ctx.aliases.insert(Path::from_identifier(m.name), self.current_path.with_ident(m.name));
-                }
-                _ => {}
-            }
-        }
-
         for statement in &block.statements {
             if let Some((name, id)) = self.typecheck_statement(&child_ctx, statement)? {
                 child_ctx.bindings.insert(name, id);

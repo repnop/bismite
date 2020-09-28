@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "ast",
+    "ast_lowering",
     "hir",
     "parser",
     "repl",
