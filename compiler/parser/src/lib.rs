@@ -494,9 +494,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn path(&mut self) -> Result<Path> {
-        let mut segments = Vec::new();
-
-        segments.push(self.identifier()?);
+        let mut segments = vec![self.identifier()?];
 
         while let Ok(Token { kind: TokenKind::PathSep, .. }) = self.peek() {
             self.eat(TokenKind::PathSep)?;

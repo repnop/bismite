@@ -244,7 +244,7 @@ impl TypeEngine {
                         None => Err(TypeError::UnknownIdentifier(ident)),
                     },
                 },
-                None => self.name_map.get(&path).copied().ok_or_else(|| TypeError::UnknownType(path.clone())),
+                None => self.name_map.get(path).copied().ok_or_else(|| TypeError::UnknownType(path.clone())),
             },
             ExpressionKind::FieldAccess(lhs, ident) => {
                 let infer = self.fresh_infer();
@@ -435,7 +435,7 @@ impl TypeEngine {
         match &statement.kind {
             StatementKind::Expression(e) => {
                 let infer = self.fresh_infer();
-                self.typecheck_expression(ctx, &e, infer)?;
+                self.typecheck_expression(ctx, e, infer)?;
                 Ok(None)
             }
             StatementKind::Local(local) => {

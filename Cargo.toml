@@ -1,10 +1,2 @@
 [workspace]
-members = [
-    "ast",
-    "ast_lowering",
-    "hir",
-    "parser",
-    "repl",
-    "strcache",
-    "typecheck",
-]
+members = ["compiler/*", "repl"]

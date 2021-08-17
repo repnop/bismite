@@ -85,13 +85,13 @@ impl HirEngine {
         self.type_engine.typecheck_item(&self.mk_context(), item).map_err(|e| self.mk_type_error(e))?;
 
         match &item.kind {
-            // alreayd inserted in typechecker
+            // already inserted in typechecker
             ItemKind::Struct(_) => Ok(()),
             ItemKind::Module(module) => {
                 self.current_path = self.current_path.with_ident(module.name);
 
-                let aliases = self.aliases.entry(self.current_path.clone()).or_default();
-                UseCollector::new(aliases).visit_module(&module);
+                //let aliases = self.aliases.entry(self.current_path.clone()).or_default();
+                //ast_lowering::visitors::UseCollector::new(aliases).visit_module(&module);
 
                 // TODO: clear stuff on errors
                 for item in &module.items {
@@ -340,36 +340,6 @@ impl HirEngine {
         }));
 
         let res = (|| {
-            for item in &block.items {
-                self.evaluate_item(item)?;
-                match &item.kind {
-                    ItemKind::Struct(s) => {
-                        self.aliases
-                            .entry(self.current_path.clone())
-                            .or_default()
-                            .insert(Path::from_identifier(s.name), self.current_path.with_ident(s.name));
-                    }
-                    ItemKind::Function(f) => {
-                        self.aliases
-                            .entry(self.current_path.clone())
-                            .or_default()
-                            .insert(Path::from_identifier(f.name), self.current_path.with_ident(f.name));
-                    }
-                    ItemKind::Module(m) => {
-                        self.aliases
-                            .entry(self.current_path.clone())
-                            .or_default()
-                            .insert(Path::from_identifier(m.name), self.current_path.with_ident(m.name));
-                    }
-                    ItemKind::Use(u) => {
-                        self.aliases
-                            .entry(self.current_path.clone())
-                            .or_default()
-                            .insert(Path::from_identifier(u.path.last()), u.path.clone());
-                    }
-                }
-            }
-
             for statement in &block.statements {
                 self.evaluate_statement(statement)?;
             }

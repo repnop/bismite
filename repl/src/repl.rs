@@ -330,6 +330,8 @@ impl rustyline::completion::Completer for Helper {
     type Candidate = rustyline::completion::Pair;
 }
 impl rustyline::hint::Hinter for Helper {
+    type Hint = String;
+
     fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<String> {
         self.hinter.hint(line, pos, ctx)
     }

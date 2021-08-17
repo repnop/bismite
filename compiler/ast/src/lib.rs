@@ -169,6 +169,20 @@ impl Identifier {
     }
 }
 
+impl PartialEq for Identifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for Identifier {}
+
+impl std::hash::Hash for Identifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BinOp {
     Add,
@@ -181,24 +195,15 @@ pub enum BinOp {
 
 impl BinOp {
     pub fn is_comparison_op(self) -> bool {
-        match self {
-            BinOp::Equal => true,
-            _ => false,
-        }
+        matches!(self, BinOp::Equal)
     }
 
     pub fn is_arith_op(self) -> bool {
-        match self {
-            BinOp::Add | BinOp::Subtract | BinOp::Multiply | BinOp::Divide => true,
-            _ => false,
-        }
+        matches!(self, BinOp::Add | BinOp::Subtract | BinOp::Multiply | BinOp::Divide)
     }
 
     pub fn is_logic_op(self) -> bool {
-        match self {
-            BinOp::LogicalAnd => true,
-            _ => false,
-        }
+        matches!(self, BinOp::LogicalAnd)
     }
 }
 

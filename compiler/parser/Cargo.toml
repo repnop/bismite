@@ -7,6 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ast = { path = "../ast" }
-codespan = "0.9.5"
-logos = "0.11.4"
+ast = { path="../ast" }
+codespan = "0.11.1"
+logos = "0.12.0"

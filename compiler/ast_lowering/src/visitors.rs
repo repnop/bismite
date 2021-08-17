@@ -13,13 +13,13 @@ impl<'a> UseCollector<'a> {
 }
 
 impl Visitor for UseCollector<'_> {
-    fn visit_use(&mut self, usage: &ast::Use) {
+    fn visit_use(&mut self, usage: &mut ast::Use) {
         let path = hir::Path::convert(&usage.path);
         self.ctx.scopes.last_mut().expect("no import scope").imports.insert(path.last(), path);
     }
 
-    fn visit_item(&mut self, item: &ast::Item) {
-        if let ast::Item::Use(usage) = &item {
+    fn visit_item(&mut self, item: &mut ast::Item) {
+        if let ast::Item::Use(usage) = &mut item {
             self.visit_use(usage);
         }
     }
@@ -47,19 +47,18 @@ impl ExprPathReplacer {
                         }
                         *p = full_path;
                     }
-                    _ => {},
+                    _ => {}
                 },
             },
             ExpressionKind::BinaryOperation(lhs, _, rhs) => {
                 self.replace(ctx, &mut *lhs);
                 self.replace(ctx, &mut *rhs);
-            },
+            }
             ExpressionKind::FieldAccess(lhs, _) => {
                 self.replace(ctx, &mut *lhs);
-            },
-            ExpressionKind::If(ifs) => {
-                
             }
+            ExpressionKind::If(ifs) => {}
+            _ => todo!(),
         }
     }
 }

@@ -126,10 +126,7 @@ pub enum TokenKind {
 
 impl TokenKind {
     pub fn is_binop(&self) -> bool {
-        match self {
-            TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::DoubleEq => true,
-            _ => false,
-        }
+        matches!(self, TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::DoubleEq)
     }
 
     pub fn as_str(&self) -> &'static str {

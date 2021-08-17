@@ -7,11 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ast = { path = "../ast" }
-codespan = "0.9.4"
-codespan-reporting = "0.9.4"
-hir = { path = "../hir" }
-parser = { path = "../parser" }
-rustyline = "6.1.2"
+ast = { path = "../compiler/ast" }
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"
+hir = { path = "../compiler/hir" }
+parser = { path = "../compiler/parser" }
+rustyline = "8.0.0"
 structopt = "0.3.14"
-typecheck = { path = "../typecheck" }
+typecheck = { path = "../compiler/typecheck" }

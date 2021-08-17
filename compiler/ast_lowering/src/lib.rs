@@ -1,7 +1,7 @@
 mod visitors;
 
 use ast::Visitor;
-use hir::{Block, Expression, ExpressionKind, Function, Identifier, Item, ItemKind, Module, Path};
+use hir::{Block, Expression, ExpressionKind, Function, Identifier, Item, ItemKind, Module, Path, Statement, Type};
 use std::collections::{HashMap, HashSet};
 use visitors::UseCollector;
 
@@ -72,7 +72,13 @@ impl LoweringContext {
         })
     }
 
-    pub fn lower_expression(&mut self, expression: &ast::Expression) -> Expression {}
+    pub fn lower_expression(&mut self, expression: &ast::Expression) -> Expression {
+        todo!()
+    }
+
+    pub fn lower_statement(&mut self, statement: &ast::Statement) -> Statement {}
+
+    pub fn lower_ty(&mut self, ty: &ast::Type) -> Type {}
 
     fn with_scope<T>(&mut self, scope: Scope, mut f: impl FnMut(&mut Self) -> T) -> T {
         self.scopes.push(scope);
@@ -104,7 +110,7 @@ impl LoweringContext {
     // 2. Check latest scope imports
     // 3. If neither of the above, repeat for the parent scope if it exists
     fn get_ident_kind(&self, ident: Identifier) -> IdentKind {
-        self.scopes.iter().rev().filter_map(|scope| scope.ident_kind(ident)).next().expect("ident doesn't exist rip")
+        self.scopes.iter().rev().find_map(|scope| scope.ident_kind(ident)).expect("ident doesn't exist rip")
     }
 }
 

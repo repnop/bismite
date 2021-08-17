@@ -43,7 +43,7 @@ pub struct Item {
 
 impl Item {
     pub fn convert(item: &ast::Item) -> Self {
-        Self { kind: ItemKind::convert(&item), span: item.span() }
+        Self { kind: ItemKind::convert(item), span: item.span() }
     }
 }
 
@@ -297,11 +297,11 @@ impl ExpressionKind {
                 ExpressionKind::Assignment(Box::new(Expression::convert(lhs)), Box::new(Expression::convert(rhs)))
             }
             ast::ExpressionKind::BinaryOperation(e1, op, e2) => ExpressionKind::BinaryOperation(
-                Box::new(Expression::convert(&e1)),
+                Box::new(Expression::convert(e1)),
                 *op,
-                Box::new(Expression::convert(&e2)),
+                Box::new(Expression::convert(e2)),
             ),
-            ast::ExpressionKind::Block(b) => ExpressionKind::Block(Box::new(Block::convert(&b))),
+            ast::ExpressionKind::Block(b) => ExpressionKind::Block(Box::new(Block::convert(b))),
             ast::ExpressionKind::Boolean(b) => ExpressionKind::Boolean(*b),
             ast::ExpressionKind::FieldAccess(e, ident) => {
                 ExpressionKind::FieldAccess(Box::new(Expression::convert(e)), Identifier::convert(ident))
@@ -311,11 +311,11 @@ impl ExpressionKind {
             ast::ExpressionKind::Struct(s) => ExpressionKind::Struct(StructExpr::convert(s)),
             ast::ExpressionKind::Unit => ExpressionKind::Unit,
             ast::ExpressionKind::FnCall(lhs, args) => ExpressionKind::FnCall(
-                Box::new(Expression::convert(&lhs)),
+                Box::new(Expression::convert(lhs)),
                 args.iter().map(Expression::convert).collect(),
             ),
-            ast::ExpressionKind::Unary(op, expr) => ExpressionKind::Unary(*op, Box::new(Expression::convert(&expr))),
-            ast::ExpressionKind::If(if_expr) => ExpressionKind::If(Box::new(IfExpr::convert(&if_expr))),
+            ast::ExpressionKind::Unary(op, expr) => ExpressionKind::Unary(*op, Box::new(Expression::convert(expr))),
+            ast::ExpressionKind::If(if_expr) => ExpressionKind::If(Box::new(IfExpr::convert(if_expr))),
         }
     }
 }
