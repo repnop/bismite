@@ -1,4 +1,4 @@
-use crate::Path;
+use crate::{Path, Struct};
 use codespan::Span;
 use std::fmt::{self, Display, Formatter};
 
@@ -21,11 +21,12 @@ impl Type {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TypeKind {
     Integer,
     Bool,
     Path(Path),
+    Struct(Struct),
     Unit,
     Infer,
 }

@@ -1,38 +1,19 @@
+pub mod arena;
+pub mod ctx;
 mod ty;
 pub mod visit;
 
 pub use ast::{BinOp, UnaryOp};
 use codespan::Span;
-use std::{
-    cell::RefCell,
-    fmt::{self, Display, Formatter},
-};
+use ctx::{FunctionId, ItemId, ModuleId, TypeId};
 pub use string_interner::{DefaultStringInterner, Sym};
 pub use ty::*;
-
-std::thread_local! {
-    static INTERNER: RefCell<DefaultStringInterner> = RefCell::new(DefaultStringInterner::new());
-}
 
 #[derive(Clone, Debug)]
 pub struct Module {
     pub name: Identifier,
-    pub items: Vec<Item>,
+    pub items: Vec<ItemId>,
     pub span: Span,
-}
-
-impl Module {
-    pub fn new(name: Identifier, items: Vec<Item>, span: Span) -> Self {
-        Self { name, items, span }
-    }
-
-    pub fn convert(module: &ast::Module) -> Self {
-        Self {
-            name: Identifier::convert(&module.name),
-            items: module.items.iter().map(Item::convert).collect(),
-            span: module.span,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -41,29 +22,11 @@ pub struct Item {
     pub span: Span,
 }
 
-impl Item {
-    pub fn convert(item: &ast::Item) -> Self {
-        Self { kind: ItemKind::convert(item), span: item.span() }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum ItemKind {
-    Module(Module),
-    Function(Function),
-    Struct(Struct),
-    Use(Use),
-}
-
-impl ItemKind {
-    pub fn convert(item: &ast::Item) -> Self {
-        match item {
-            ast::Item::Function(f) => ItemKind::Function(Function::convert(f)),
-            ast::Item::Module(f) => ItemKind::Module(Module::convert(f)),
-            ast::Item::Struct(f) => ItemKind::Struct(Struct::convert(f)),
-            ast::Item::Use(u) => ItemKind::Use(Use::convert(u)),
-        }
-    }
+    Module(ModuleId),
+    Function(FunctionId),
+    Struct(TypeId),
 }
 
 #[derive(Clone, Debug)]
@@ -72,31 +35,9 @@ pub struct Use {
     pub span: Span,
 }
 
-impl Use {
-    pub fn convert(usage: &ast::Use) -> Self {
-        Self { path: Path::convert(&usage.path), span: usage.span }
-    }
-}
-
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default)]
 pub struct Path {
     pub segments: Vec<Identifier>,
-}
-
-impl std::fmt::Display for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        INTERNER.with(|i| {
-            for (idx, ident) in self.segments.iter().enumerate() {
-                write!(f, "{}", i.borrow_mut().resolve(ident.name).unwrap())?;
-
-                if idx != self.segments.len() - 1 {
-                    write!(f, "::")?;
-                }
-            }
-
-            Ok(())
-        })
-    }
 }
 
 impl Path {
@@ -134,24 +75,6 @@ impl Path {
         self.segments.pop()
     }
 
-    pub fn convert(ast: &ast::Path) -> Self {
-        Self { segments: ast.segments.iter().map(|ident| Identifier::convert(ident)).collect() }
-    }
-
-    pub fn canonicalize(&self) -> Self {
-        let mut segments = Vec::with_capacity(self.segments.len());
-
-        for &seg in &self.segments {
-            if seg.string() == "super" {
-                segments.pop();
-            } else {
-                segments.push(seg);
-            }
-        }
-
-        Self { segments }
-    }
-
     pub fn join(&self, other: &Self) -> Self {
         Self {
             segments: {
@@ -163,39 +86,15 @@ impl Path {
     }
 }
 
-#[derive(Clone, Copy, Eq)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct Identifier {
     pub name: Sym,
     pub span: Span,
 }
 
 impl Identifier {
-    pub fn new(s: &str) -> Self {
-        let sym = INTERNER.with(|i| i.borrow_mut().get_or_intern(s));
-        Identifier::with_dummy_span(sym)
-    }
-
-    pub fn string(self) -> String {
-        INTERNER.with(|i| i.borrow().resolve(self.name).unwrap().to_owned())
-    }
-    pub fn convert(ast: &ast::Identifier) -> Self {
-        Self { name: INTERNER.with(|i| i.borrow_mut().get_or_intern(&ast.value)), span: ast.span }
-    }
-
     pub fn with_dummy_span(name: Sym) -> Self {
         Self { name, span: Span::new(0, 0) }
-    }
-}
-
-impl std::fmt::Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl std::fmt::Debug for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        INTERNER.with(|i| write!(f, "{}", i.borrow_mut().resolve(self.name).unwrap()))
     }
 }
 
@@ -245,18 +144,6 @@ pub struct Local {
     pub ty: Type,
     pub value: Expression,
     pub span: Span,
-}
-
-impl Local {
-    pub fn convert(vb: &ast::VariableBinding) -> Self {
-        let name = Identifier::convert(&vb.name);
-        let mutable = vb.mutable;
-        let ty = Type::convert_optional(&vb.ty);
-        let value = Expression::convert(&vb.value);
-        let span = vb.span;
-
-        Self { name, mutable, ty, value, span }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -412,36 +299,15 @@ impl Block {
 pub struct Function {
     pub name: Identifier,
     pub parameters: Vec<FunctionParameter>,
-    pub return_type: Type,
+    pub return_type: TypeId,
     pub body: Block,
-}
-
-impl Function {
-    pub fn convert(f: &ast::Function) -> Self {
-        Self {
-            name: Identifier::convert(&f.name),
-            parameters: f.parameters.iter().map(FunctionParameter::convert).collect(),
-            return_type: f.return_ty.as_ref().map(Type::convert).unwrap_or_else(|| Type {
-                kind: TypeKind::Unit,
-                // FIXME
-                span: Span::new(0, 0),
-            }),
-            body: Block::convert(&f.body),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
 pub struct FunctionParameter {
     pub name: Identifier,
-    pub ty: Type,
+    pub ty: TypeId,
     pub span: Span,
-}
-
-impl FunctionParameter {
-    pub fn convert(fp: &ast::FunctionParameter) -> Self {
-        Self { name: Identifier::convert(&fp.name), ty: Type::convert(&fp.ty), span: fp.span }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -451,41 +317,9 @@ pub struct Struct {
     pub span: Span,
 }
 
-impl Struct {
-    pub fn convert(strukt: &ast::Struct) -> Self {
-        Self {
-            name: Identifier::convert(&strukt.name),
-            members: strukt.members.iter().map(StructMember::convert).collect(),
-            span: strukt.span,
-        }
-    }
-}
-
-impl Display for Struct {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "struct {} {{", self.name)?;
-        for member in &self.members {
-            writeln!(f, "    {}", member)?;
-        }
-        write!(f, "}}")
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct StructMember {
     pub name: Identifier,
-    pub ty: Type,
+    pub ty: TypeId,
     pub span: Span,
-}
-
-impl StructMember {
-    pub fn convert(member: &ast::StructMember) -> Self {
-        Self { name: Identifier::convert(&member.name), ty: Type::convert(&member.ty), span: member.span }
-    }
-}
-
-impl Display for StructMember {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.name, self.ty.kind)
-    }
 }
