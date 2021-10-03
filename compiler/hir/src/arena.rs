@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Arena<T> {
     inner: Vec<T>,
 }

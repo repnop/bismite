@@ -1,4 +1,5 @@
 use hir::{
+    ctx::{ExpressionId, HirContext},
     BinOp, Block, Expression, ExpressionKind, Function, Identifier, Item, ItemKind, Path, Statement, StatementKind,
     Struct, StructExpr, Type, TypeKind, UnaryOp,
 };
@@ -77,8 +78,8 @@ pub enum TypeError {
 }
 
 impl TypeError {
-    pub fn debug<'a>(&'a self, engine: &'a TypeEngine) -> TypeErrorDebug<'a> {
-        TypeErrorDebug { error: self, engine }
+    pub fn debug<'a>(&'a self, engine: &'a TypeEngine, hir_ctx: &'a HirContext) -> TypeErrorDebug<'a> {
+        TypeErrorDebug { error: self, engine, hir_ctx }
     }
 }
 
@@ -90,8 +91,10 @@ pub struct TypeErrorDebug<'a> {
 impl Debug for TypeErrorDebug<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.error {
-            TypeError::NoField(info, field) => write!(f, "No field `{}` on type {}", field, info.name(self.engine)),
-            TypeError::UnknownType(id) => write!(f, "Unknown type: `{}`", id.to_string()),
+            TypeError::NoField(info, field) => {
+                write!(f, "No field `{}` on type {}", field.as_str(&self.hir_ctx), info.name(self.engine))
+            }
+            TypeError::UnknownType(id) => write!(f, "Unknown type: `{}`", id.to_string(&self.hir_ctx)),
             TypeError::MismatchedTypes { wanted, have } => write!(
                 f,
                 "Type mismatch: expected `{}`, but found `{}`",
@@ -101,12 +104,16 @@ impl Debug for TypeErrorDebug<'_> {
             TypeError::UnknownBinOp { lhs, op, rhs } => {
                 write!(f, "No implmentation for `{}` {} `{}`", lhs.name(self.engine), op, rhs.name(self.engine))
             }
-            TypeError::UnknownIdentifier(ident) => write!(f, "(TypeError) Unknown identifier `{}`", ident),
+            TypeError::UnknownIdentifier(ident) => {
+                write!(f, "(TypeError) Unknown identifier `{}`", ident.as_str(&self.hir_ctx))
+            }
             TypeError::NotValidRhs => write!(f, "Not a valid right hand side expression"),
             TypeError::NotCallable(info) => write!(f, "Type `{}` is not a function", info.name(self.engine)),
             TypeError::TooManyArgs => write!(f, "Too many arguments <todo: fn stuff>"),
             TypeError::NotEnoughArgs => write!(f, "Too few arguments <todo: fn stuff>"),
-            TypeError::NotMutable(ident) => write!(f, "Local `{}` was not declared as mutable", ident),
+            TypeError::NotMutable(ident) => {
+                write!(f, "Local `{}` was not declared as mutable", ident.as_str(&self.hir_ctx))
+            }
             TypeError::UnknownUnaryOp { op, info } => {
                 write!(f, "No implmentation for {}(`{}`)", op, info.name(self.engine))
             }
@@ -121,6 +128,7 @@ pub struct TypeEngine {
     name_map: HashMap<Path, TypeId>,
     current_path: Path,
     unnamable_count: usize,
+    hir_ctx: HirContext,
 }
 
 impl TypeEngine {
@@ -196,8 +204,8 @@ impl TypeEngine {
         self.types.len() - 1
     }
 
-    pub fn typecheck_expression(&mut self, ctx: &Context<'_>, expr: &Expression, expected: TypeId) -> Result<TypeId> {
-        match &expr.kind {
+    pub fn typecheck_expression(&mut self, ctx: &Context<'_>, expr: &ExpressionId, expected: TypeId) -> Result<TypeId> {
+        match &self.hir_ctx.expressions[expr.0].kind {
             ExpressionKind::Integer(_) => self.unify(ctx, expected, self.integer()),
             ExpressionKind::Boolean(_) => self.unify(ctx, expected, self.bool()),
             ExpressionKind::Block(block) => self.typecheck_block(ctx, block, expected),
@@ -518,17 +526,6 @@ impl TypeEngine {
 
     fn unit(&self) -> TypeId {
         2
-    }
-}
-
-impl Default for TypeEngine {
-    fn default() -> Self {
-        Self {
-            types: vec![TypeInfo::Integer, TypeInfo::Bool, TypeInfo::Unit],
-            name_map: HashMap::new(),
-            current_path: Path::new(),
-            unnamable_count: 0,
-        }
     }
 }
 

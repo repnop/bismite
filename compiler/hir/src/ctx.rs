@@ -2,10 +2,12 @@ use std::collections::HashMap;
 
 use crate::{
     arena::{Arena, Key},
-    Function, FunctionParameter, Identifier, Item, ItemKind, Module, Path, Struct, StructMember, Type, TypeKind,
+    Block, Expression, ExpressionKind, Function, FunctionParameter, Identifier, If, IfExpr, Item, ItemKind, Local,
+    Module, Path, Statement, StatementKind, Struct, StructExpr, StructExprMember, StructMember, Type, TypeKind,
 };
 use string_interner::DefaultStringInterner;
 
+#[derive(Debug)]
 struct UseStack {
     uses: Vec<HashMap<Identifier, Path>>,
 }
@@ -43,14 +45,13 @@ impl UseStack {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct HirContext {
-    interner: DefaultStringInterner,
-    items: Arena<Item>,
-    types: Arena<Type>,
-    type_path_map: HashMap<Path, TypeId>,
-    modules: Arena<Module>,
-    functions: Arena<Function>,
+    pub interner: DefaultStringInterner,
+    pub items: Arena<Item>,
+    pub types: Arena<Type>,
+    pub expressions: Arena<Expression>,
+    pub statements: Arena<Statement>,
     // TODO: probably need to expose more info to track down import errors
     use_stack: Vec<UseStack>,
     current_path: Path,
@@ -76,60 +77,154 @@ impl HirContext {
         path
     }
 
-    pub fn lower_module(&mut self, module: ast::Module) -> ModuleId {
+    pub fn lower_module(&mut self, module: ast::Module) -> ItemId {
+        let span = module.span;
         let (uses, items): (Vec<_>, Vec<_>) = module.items.into_iter().partition(|i| matches!(i, ast::Item::Use(_)));
 
-        self.use_stack.push(UseStack::new_with(uses.into_iter().map(|u| match u {
+        let uses = UseStack::new_with(uses.into_iter().map(|u| match u {
             ast::Item::Use(u) => self.lower_path(u.path),
             _ => unreachable!(),
-        })));
+        }));
+        self.use_stack.push(uses);
 
-        let module = Module {
-            name: self.intern(module.name),
-            items: items.into_iter().map(|i| self.lower_item(i)).collect(),
-            span: module.span,
-        };
+        let name = self.intern(module.name);
+        self.current_path.push(name);
 
-        ModuleId(self.modules.insert(module))
+        let module = Module { name, items: items.into_iter().map(|i| self.lower_item(i)).collect(), span };
+
+        self.current_path.pop();
+
+        ItemId(self.items.insert(Item { kind: ItemKind::Module(module), span }))
     }
 
     pub fn lower_item(&mut self, item: ast::Item) -> ItemId {
-        let span = item.span();
-        let item = Item {
-            kind: match item {
-                ast::Item::Function(f) => ItemKind::Function(self.lower_function(f)),
-                ast::Item::Module(f) => ItemKind::Module(self.lower_module(f)),
-                ast::Item::Struct(f) => ItemKind::Struct(self.lower_struct(f)),
-                _ => unreachable!("uses should be filtered out by this point"),
-            },
-            span,
-        };
-
-        ItemId(self.items.insert(item))
+        match item {
+            ast::Item::Function(f) => self.lower_function(f),
+            ast::Item::Module(f) => self.lower_module(f),
+            ast::Item::Struct(f) => self.lower_struct(f),
+            _ => unreachable!("uses should be filtered out by this point"),
+        }
     }
 
-    pub fn lower_function(&mut self, func: ast::Function) -> FunctionId {
+    pub fn lower_function(&mut self, afunc: ast::Function) -> ItemId {
+        // TODO: imports in function bodies
+
         let func = Function {
-            name: self.intern(func.name),
-            parameters: func.parameters.into_iter().map(|p| self.lower_fn_parameter(p)).collect(),
-            return_type: func.return_ty.map(|ty| self.lower_type(ty)).unwrap_or(self.unit_typeid()),
-            body: self.lower_block(func.body),
+            name: self.intern(afunc.name),
+            parameters: afunc.parameters.into_iter().map(|p| self.lower_fn_parameter(p)).collect(),
+            return_type: afunc.return_ty.map(|ty| self.lower_type(ty)).unwrap_or_else(|| self.unit_typeid()),
+            body: self.lower_block(afunc.body),
         };
 
-        FunctionId(self.functions.insert(func))
+        ItemId(self.items.insert(Item { kind: ItemKind::Function(func), span: afunc.span }))
     }
 
     pub fn lower_fn_parameter(&mut self, fn_param: ast::FunctionParameter) -> FunctionParameter {
         FunctionParameter { name: self.intern(fn_param.name), ty: self.lower_type(fn_param.ty), span: fn_param.span }
     }
 
-    pub fn lower_struct(&mut self, strukt: ast::Struct) -> TypeId {
-        let name = self.intern(strukt.name);
-        let path = self.current_path.with_ident(name);
-        let entry = self.type_path_map.get_mut(&path);
+    pub fn lower_statement(&mut self, statement: ast::Statement) -> StatementId {
+        let stmt = Statement { kind: self.lower_statement_kind(statement.kind), span: statement.span };
+        StatementId(self.statements.insert(stmt))
+    }
 
-        let strukt_ty = Type {
-            kind: TypeKind::Struct(Struct {
+    pub fn lower_statement_kind(&mut self, kind: ast::StatementKind) -> StatementKind {
+        match kind {
+            ast::StatementKind::Expression(e) => StatementKind::Expression(self.lower_expr(e)),
+            ast::StatementKind::VariableBinding(vb) => StatementKind::Local(self.lower_local(vb)),
+        }
+    }
+
+    pub fn lower_local(&mut self, local: ast::VariableBinding) -> Local {
+        let span = local.span;
+        Local {
+            name: self.intern(local.name),
+            value: self.lower_expr(local.value),
+            mutable: local.mutable,
+            // FIXME: right span?
+            ty: local.ty.map(|ty| self.lower_type(ty)).unwrap_or_else(|| self.fresh_infer(span)),
+            span,
+        }
+    }
+
+    pub fn lower_expr(&mut self, expr: ast::Expression) -> ExpressionId {
+        let expr = Expression { kind: self.lower_expr_kind(expr.kind), span: expr.span };
+        ExpressionId(self.expressions.insert(expr))
+    }
+
+    pub fn lower_expr_kind(&mut self, expr_kind: ast::ExpressionKind) -> ExpressionKind {
+        match expr_kind {
+            ast::ExpressionKind::Assignment(lhs, rhs) => {
+                ExpressionKind::Assignment(self.lower_expr(*lhs), self.lower_expr(*rhs))
+            }
+            ast::ExpressionKind::BinaryOperation(e1, op, e2) => {
+                ExpressionKind::BinaryOperation(self.lower_expr(*e1), op, self.lower_expr(*e2))
+            }
+            ast::ExpressionKind::Block(b) => ExpressionKind::Block(self.lower_block(*b)),
+            ast::ExpressionKind::Boolean(b) => ExpressionKind::Boolean(b),
+            ast::ExpressionKind::FieldAccess(e, ident) => {
+                ExpressionKind::FieldAccess(self.lower_expr(*e), self.intern(ident))
+            }
+            ast::ExpressionKind::Integer(i) => ExpressionKind::Integer(i),
+            ast::ExpressionKind::Path(path) => ExpressionKind::Path(self.lower_path(path)),
+            ast::ExpressionKind::Struct(s) => ExpressionKind::Struct(self.lower_struct_expr(*s)),
+            ast::ExpressionKind::Unit => ExpressionKind::Unit,
+            ast::ExpressionKind::FnCall(lhs, args) => {
+                ExpressionKind::FnCall(self.lower_expr(*lhs), args.into_iter().map(|e| self.lower_expr(e)).collect())
+            }
+            ast::ExpressionKind::Unary(op, expr) => ExpressionKind::Unary(op, self.lower_expr(*expr)),
+            ast::ExpressionKind::If(if_expr) => ExpressionKind::If(self.lower_if_expr(*if_expr)),
+        }
+    }
+
+    pub fn lower_struct_expr(&mut self, struct_expr: ast::StructExpr) -> StructExpr {
+        StructExpr {
+            name: self.lower_path(struct_expr.name),
+            members: struct_expr.members.into_iter().map(|m| self.lower_struct_expr_member(m)).collect(),
+            span: struct_expr.span,
+        }
+    }
+
+    pub fn lower_struct_expr_member(&mut self, expr_member: ast::StructExprMember) -> StructExprMember {
+        StructExprMember {
+            name: self.intern(expr_member.name),
+            expression: self.lower_expr(expr_member.expression),
+            span: expr_member.span,
+        }
+    }
+
+    pub fn lower_if_expr(&mut self, if_expr: ast::IfExpr) -> IfExpr {
+        IfExpr {
+            ifs: if_expr.ifs.into_iter().map(|i| self.lower_if(i)).collect(),
+            // TODO: better way to do this?
+            r#else: if_expr.r#else.map(|b| self.lower_block(b)).unwrap_or_else(|| Block {
+                statements: Vec::new(),
+                return_expr: self.dummy_unit_expr(),
+                span: codespan::Span::new(0, 0),
+            }),
+            span: if_expr.span,
+        }
+    }
+
+    pub fn lower_if(&mut self, if_: ast::If) -> If {
+        If { condition: self.lower_expr(if_.condition), body: self.lower_block(if_.body), span: if_.span }
+    }
+
+    pub fn lower_block(&mut self, block: ast::Block) -> Block {
+        let expr_span = block.statements.last().map(|s| s.span).unwrap_or(block.span);
+        Block {
+            statements: block.statements.into_iter().map(|s| self.lower_statement(s)).collect(),
+            return_expr: block.return_expr.map(|e| self.lower_expr(e)).unwrap_or_else(|| {
+                ExpressionId(self.expressions.insert(Expression { kind: ExpressionKind::Unit, span: expr_span }))
+            }),
+            span: block.span,
+        }
+    }
+
+    pub fn lower_struct(&mut self, strukt: ast::Struct) -> ItemId {
+        let name = self.intern(strukt.name);
+        let strukt = Item {
+            kind: ItemKind::Struct(Struct {
                 name,
                 members: strukt.members.into_iter().map(|m| self.lower_struct_member(m)).collect(),
                 span: strukt.span,
@@ -137,25 +232,15 @@ impl HirContext {
             span: strukt.span,
         };
 
-        match entry {
-            Some(typeid) => match &mut self.types[typeid.0] {
-                ty @ Type { kind: TypeKind::Infer, .. } => {
-                    *ty = strukt_ty;
-                    *typeid
-                }
-                _ => *typeid,
-            },
-            None => {
-                let id = TypeId(self.types.insert(strukt_ty));
-                self.type_path_map.insert(path, id);
-
-                id
-            }
-        }
+        ItemId(self.items.insert(strukt))
     }
 
-    pub fn lower_struct_member(&mut self, fn_param: ast::StructMember) -> StructMember {
-        FunctionParameter { name: self.intern(fn_param.name), ty: self.lower_type(fn_param.ty), span: fn_param.span }
+    pub fn lower_struct_member(&mut self, struct_member: ast::StructMember) -> StructMember {
+        StructMember {
+            name: self.intern(struct_member.name),
+            ty: self.lower_type(struct_member.ty),
+            span: struct_member.span,
+        }
     }
 
     pub fn lower_type(&mut self, ty: ast::Type) -> TypeId {
@@ -167,8 +252,8 @@ impl HirContext {
     }
 
     fn lower_type_path(&mut self, ty_path: ast::Path, span: codespan::Span) -> TypeId {
-        // This can get swapped out later in the `self.types` to the actual type description
-        *self.type_path_map.entry(self.lower_path(ty_path)).or_insert_with(|| self.fresh_infer(span))
+        let ty = Type { kind: TypeKind::Path(self.lower_path(ty_path)), span };
+        TypeId(self.types.insert(ty))
     }
 
     fn unit_typeid(&self) -> TypeId {
@@ -180,6 +265,10 @@ impl HirContext {
     }
 
     fn int_typeid(&self) -> TypeId {
+        todo!()
+    }
+
+    fn dummy_unit_expr(&self) -> ExpressionId {
         todo!()
     }
 
@@ -199,3 +288,12 @@ pub struct ModuleId(Key<Module>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FunctionId(Key<Function>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StructId(Key<Struct>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExpressionId(Key<Expression>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StatementId(Key<Statement>);
